@@ -3,7 +3,7 @@
     "name": "f1-remote-mobile",
     "slug": "f1-remote-mobile",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "landscape",
     "icon": "./assets/images/icon.png",
     "scheme": "f1remotemobile",
     "userInterfaceStyle": "automatic",
@@ -17,7 +17,8 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.vestiapani.f1remotemobile"
     },
     "web": {
       "output": "static",
@@ -35,8 +36,13 @@
       ]
     ],
     "experiments": {
-      "typedRoutes": true,
-      "reactCompiler": true
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7d2521e0-8f30-4e28-bc3c-988ac98bb49c"
+      }
     }
   }
 }
