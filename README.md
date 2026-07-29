@@ -1,56 +1,49 @@
-# Welcome to your Expo app 👋
+# F1 Remote Mobile
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Aplikasi Android untuk mengubah HP menjadi controller nirkabel (tombol + pedal gas + kemudi via gyro) yang terhubung ke PC lewat WiFi, dipakai bersama server companion (Node.js + Socket.IO + ViGEmClient) yang meneruskan input ke game sebagai virtual gamepad, dan mengirim balik data telemetri (kecepatan, gigi, RPM) serta getaran ke HP.
 
-## Get started
+## Fitur
+- Tombol face button (A/B/X/Y), bumper (LB/RB), dan trigger R2 (rem/gas tambahan)
+- Slider gas dengan multi-touch independen
+- Kemudi via kemiringan HP (gyroscope), dengan kalibrasi otomatis & mode invert
+- Panel telemetri: gigi, kecepatan, shift light RPM
+- Haptic feedback dari getaran game
+- Layout tombol bisa digeser & di-resize bebas (mode Edit Layout)
+- IP server bisa diisi langsung di aplikasi, tidak perlu hardcode
 
-1. Install dependencies
+## Tech stack
+- [Expo](https://expo.dev) (React Native) — tanpa `expo-router`, satu layar (`App.js`)
+- `expo-sensors` untuk gyroscope, `expo-haptics` untuk getaran
+- `socket.io-client` untuk komunikasi realtime ke server PC
 
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Menjalankan untuk development
 
 ```bash
-npm run reset-project
+npm install
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Scan QR dengan Expo Go, atau tekan `a` untuk emulator Android.
 
-### Other setup steps
+## Build APK (production, tanpa Expo Go)
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+Menjalankan lewat Expo Go menambah latency karena bundle JS masih di-serve dari Metro dev server. Build APK sendiri jauh lebih responsif:
 
-## Learn more
+```bash
+npm install -g eas-cli
+eas login
+eas build -p android --profile preview
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+Setelah build selesai, download & install APK ke HP. Buka aplikasi, isi IP lokal laptop kamu (mis. `192.168.1.9:3000`) di kolom yang tersedia — pastikan HP & laptop di jaringan WiFi yang sama, lalu tekan **Connect**.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+### Kalau APK force close
+Pastikan tidak ada dependency versi `canary`/eksperimental yang tidak dipakai di `package.json`. Untuk debug lebih detail:
 
-## Join the community
+```bash
+npx expo run:android      # build & jalankan lokal, log error langsung tampil
+# atau
+adb logcat *:E            # lihat crash log di HP yang tersambung USB
+```
 
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Struktur proyek
