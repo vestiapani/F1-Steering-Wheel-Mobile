@@ -192,21 +192,46 @@ const GasSlider = ({ percent }) => (
   </View>
 );
 
-const ShiftLight = ({ litDots, totalDots }) => (
-  <View style={styles.rpmRow}>
-    {Array.from({ length: totalDots }).map((_, i) => {
-      let color = "#333";
-      if (i < litDots) {
-        if (i >= 12) color = "#3d27fd";
-        else if (i >= 7) color = "#ff1744";
-        else color = "#00e676";
-      }
-      return (
-        <View key={i} style={[styles.rpmDot, { backgroundColor: color }]} />
-      );
-    })}
-  </View>
-);
+const ShiftLight = ({ litDots, totalDots }) => {
+  const [blink, setBlink] = useState(true);
+
+  useEffect(() => {
+    // Interval kedipan 75ms (sangat cepat, khas mobil balap)
+    const interval = setInterval(() => setBlink((b) => !b), 75);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Trigger kedip saat nyala 13 lampu atau lebih (mendekati ujung merah / masuk biru)
+  const isRedlining = litDots >= 13;
+  // Jika sedang redline, lampu akan nyala/mati mengikuti state blink
+  const showLights = !isRedlining || blink;
+
+  return (
+    <View style={styles.rpmRow}>
+      {Array.from({ length: totalDots }).map((_, i) => {
+        let color = "#333"; // Warna dasar (mati)
+
+        if (i < litDots) {
+          if (i >= 12)
+            color = "#3d27fd"; // Biru
+          else if (i >= 7)
+            color = "#ff1744"; // Merah
+          else color = "#00e676"; // Hijau
+        }
+
+        // Kalau lagi redlining dan masuk fase kedip "mati", kembalikan warnanya ke #333
+        const finalColor = showLights ? color : "#333";
+
+        return (
+          <View
+            key={i}
+            style={[styles.rpmDot, { backgroundColor: finalColor }]}
+          />
+        );
+      })}
+    </View>
+  );
+};
 
 const GearSpeed = ({ gearLabel, speed }) => (
   <View style={styles.telemetryCenter}>
@@ -215,11 +240,128 @@ const GearSpeed = ({ gearLabel, speed }) => (
   </View>
 );
 
+// --- KOMPONEN BARU UNTUK F1 TELEMETRY ---
+
+const DrsIndicator = ({ active }) => (
+  <View style={[styles.drsBox, active && styles.drsActive]}>
+    <Text style={[styles.drsText, active && styles.drsTextActive]}>DRS</Text>
+  </View>
+);
+
+// Desain Baru: F1 Car Top-Down Tyres Widget
+const TyresWidget = ({ temps }) => {
+  const fl = temps[2] || 0;
+  const fr = temps[3] || 0;
+  const rl = temps[0] || 0;
+  const rr = temps[1] || 0;
+
+  const getColor = (temp) => {
+    if (temp < 85) return "#29b6f6";
+    if (temp <= 105) return "#00e676";
+    return "#ff1744";
+  };
+
+  return (
+    <View style={styles.f1CarContainer}>
+      <View style={styles.tempCol}>
+        <Text style={styles.tyreTempText}>{Math.round(fl)}°</Text>
+        <Text style={[styles.tyreTempText, { marginTop: 32 }]}>
+          {Math.round(rl)}°
+        </Text>
+      </View>
+
+      <View style={styles.carGraphicBody}>
+        <View style={styles.carNose} />
+        <View style={styles.carCockpit} />
+        <View
+          style={[
+            styles.tire,
+            styles.tireFL,
+            { backgroundColor: getColor(fl) },
+          ]}
+        />
+        <View
+          style={[
+            styles.tire,
+            styles.tireFR,
+            { backgroundColor: getColor(fr) },
+          ]}
+        />
+        <View
+          style={[
+            styles.tire,
+            styles.tireRL,
+            { backgroundColor: getColor(rl) },
+          ]}
+        />
+        <View
+          style={[
+            styles.tire,
+            styles.tireRR,
+            { backgroundColor: getColor(rr) },
+          ]}
+        />
+      </View>
+
+      <View style={styles.tempColRight}>
+        <Text style={styles.tyreTempText}>{Math.round(fr)}°</Text>
+        <Text style={[styles.tyreTempText, { marginTop: 32 }]}>
+          {Math.round(rr)}°
+        </Text>
+      </View>
+    </View>
+  );
+};
+
+const DashWidget = ({ ersMode, ersEnergy, fuel, delta }) => {
+  const ersModes = ["NONE", "MED", "HOTLAP", "OVERTAKE"];
+  const ersPct =
+    Math.min(100, Math.max(0, Math.round((ersEnergy / 4000000) * 100))) || 0;
+
+  let deltaColor = "#fff";
+  if (delta < 0)
+    deltaColor = "#00e676";
+  else if (delta > 0) deltaColor = "#ff1744";
+  const deltaSec = delta ? parseFloat(delta).toFixed(3) : "0.000";
+  const deltaPrefix = delta > 0 ? "+" : "";
+
+  return (
+    <View style={styles.dashContainer}>
+      <View style={styles.dashRow}>
+        <Text style={styles.dashLabel}>ERS: </Text>
+        <Text style={{ color: "#ffd600", fontSize: 11, fontWeight: "bold" }}>
+          {ersModes[ersMode] || "NONE"} ({ersPct}%)
+        </Text>
+      </View>
+      <View style={styles.dashRow}>
+        <Text style={styles.dashLabel}>FUEL: </Text>
+        <Text style={{ color: "#fff", fontSize: 11, fontWeight: "bold" }}>
+          {(fuel || 0).toFixed(1)} KG
+        </Text>
+      </View>
+      <View style={styles.dashRow}>
+        <Text style={styles.dashLabel}>DELTA: </Text>
+        <Text style={{ color: deltaColor, fontSize: 11, fontWeight: "bold" }}>
+          {deltaPrefix}
+          {deltaSec}
+        </Text>
+      </View>
+    </View>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Main App
+// ---------------------------------------------------------------------------
+
 const MIN_SIZE = {
   button: { w: 40, h: 40 },
   gas: { w: 40, h: 100 },
   shiftlight: { w: 180, h: 20 },
   gearspeed: { w: 120, h: 100 },
+  drs: { w: 60, h: 40 },
+  tyres: { w: 140, h: 100 }, // Diperbesar untuk menampung desain mobil baru
+  dash: { w: 140, h: 70 },
   default: { w: 60, h: 30 },
 };
 
@@ -228,17 +370,21 @@ export default function App() {
   const [serverIp, setServerIp] = useState("127.0.0.1:3000");
   const [isConnected, setIsConnected] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
-
-  // STATE BARU: Untuk menampilkan/menyembunyikan menu setting
   const [showSettings, setShowSettings] = useState(false);
-
   const [gyroEnabled, setGyroEnabled] = useState(false);
   const [gyroInverted, setGyroInverted] = useState(false);
+
   const [telemetry, setTelemetry] = useState({
     speed: 0,
     gear: 0,
     rpm: 0,
     maxRpm: 13000,
+    drs: 0,
+    tyreTemp: [0, 0, 0, 0],
+    ersMode: 0,
+    ersEnergy: 0,
+    fuel: 0,
+    delta: 0,
   });
 
   const [layout, setLayout] = useState([]);
@@ -354,6 +500,23 @@ export default function App() {
           w: 200,
           h: 160,
         },
+        { id: "DRS", type: "drs", x: SCREEN_W / 2 + 140, y: 20, w: 70, h: 40 },
+        {
+          id: "TYRES",
+          type: "tyres",
+          x: SCREEN_W / 2 + 120,
+          y: 70,
+          w: 140,
+          h: 110,
+        },
+        {
+          id: "DASH",
+          type: "dash",
+          x: SCREEN_W / 2 - 250,
+          y: 20,
+          w: 150,
+          h: 70,
+        },
       ]);
     }
   }, [SCREEN_W, SCREEN_H]);
@@ -380,6 +543,7 @@ export default function App() {
 
     socket.on("connect", () => setIsConnected(true));
     socket.on("disconnect", () => setIsConnected(false));
+
     socket.on("f1Data", (data) =>
       setTelemetry((prev) => ({ ...prev, ...data })),
     );
@@ -404,9 +568,9 @@ export default function App() {
   useEffect(() => {
     const interval = setInterval(() => {
       if (socketRef.current?.connected) {
-        socketRef.current.emit("controllerInput", inputRef.current);
+        socketRef.current.volatile.emit("controllerInput", inputRef.current);
       }
-    }, 16);
+    }, 33);
 
     return () => {
       clearInterval(interval);
@@ -424,31 +588,20 @@ export default function App() {
     if (!gyroEnabled) {
       gyroSubscription.current?.remove();
       gyroSubscription.current = null;
-      neutralGamma.current = null;
       inputRef.current.LX = 0;
       return;
     }
 
-    neutralGamma.current = null;
-    DeviceMotion.setUpdateInterval(33);
+    DeviceMotion.setUpdateInterval(16);
 
     gyroSubscription.current = DeviceMotion.addListener((motion) => {
       if (!motion.rotation) return;
       const { beta } = motion.rotation;
 
-      if (neutralGamma.current === null) neutralGamma.current = beta;
-
       const dir = gyroInvertedRef.current ? -1 : 1;
-      let delta = beta - neutralGamma.current;
-      if (delta > Math.PI) delta -= 2 * Math.PI;
-      if (delta < -Math.PI) delta += 2 * Math.PI;
-      if (Math.abs(delta) < 0.02) delta = 0;
+      const MAX_TILT = 0.8;
 
-      const MAX_TILT_RAD = (60 * Math.PI) / 180;
-      inputRef.current.LX = Math.max(
-        -1,
-        Math.min(1, (delta / MAX_TILT_RAD) * dir),
-      );
+      inputRef.current.LX = Math.max(-1, Math.min(1, (beta / MAX_TILT) * dir));
     });
 
     return () => {
@@ -467,7 +620,14 @@ export default function App() {
     const items = layoutRef.current;
     for (let i = items.length - 1; i >= 0; i--) {
       const it = items[i];
-      if (it.type === "shiftlight" || it.type === "gearspeed") continue;
+      if (
+        it.type === "shiftlight" ||
+        it.type === "gearspeed" ||
+        it.type === "drs" ||
+        it.type === "tyres" ||
+        it.type === "dash"
+      )
+        continue;
       if (px >= it.x && px <= it.x + it.w && py >= it.y && py <= it.y + it.h)
         return it;
     }
@@ -479,11 +639,12 @@ export default function App() {
     if (item.type === "button") {
       inputRef.current[item.id] = active;
       setPressedIds((prev) => ({ ...prev, [item.id]: active }));
+      // Getar hanya untuk face button
       if (active) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     } else if (item.type === "r2") {
       inputRef.current.LT = active ? 1 : 0;
       setPressedIds((prev) => ({ ...prev, [item.id]: active }));
-      if (active) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      // Getar dimatikan di trigger agar CPU gak lag
     } else if (item.type === "gas") {
       const value = active
         ? Math.max(0, Math.min(1, 1 - (py - item.y) / item.h))
@@ -546,6 +707,19 @@ export default function App() {
         return <ShiftLight litDots={litDots} totalDots={totalDots} />;
       case "gearspeed":
         return <GearSpeed gearLabel={gearLabel} speed={telemetry.speed} />;
+      case "drs":
+        return <DrsIndicator active={telemetry.drs === 1} />;
+      case "tyres":
+        return <TyresWidget temps={telemetry.tyreTemp} />;
+      case "dash":
+        return (
+          <DashWidget
+            ersMode={telemetry.ersMode}
+            ersEnergy={telemetry.ersEnergy}
+            fuel={telemetry.fuel}
+            delta={telemetry.delta}
+          />
+        );
       default:
         return null;
     }
@@ -573,7 +747,6 @@ export default function App() {
         </EditableItem>
       ))}
 
-      {/* MODAL PENGATURAN (Muncul saat tombol ⚙️ diklik) */}
       {showSettings && (
         <View style={styles.settingsOverlay}>
           <View style={styles.settingsBox}>
@@ -631,13 +804,12 @@ export default function App() {
         </View>
       )}
 
-      {/* MENU BAWAH (Settings & Edit Layout) */}
       <View style={styles.bottomMenu}>
         <TouchableOpacity
           style={styles.actionBtn}
           onPress={() => {
             setShowSettings(true);
-            setIsEditMode(false); // Matikan mode edit kalau buka setting
+            setIsEditMode(false);
           }}
         >
           <Text style={styles.actionBtnText}>⚙️ Pengaturan</Text>
@@ -650,7 +822,7 @@ export default function App() {
           ]}
           onPress={() => {
             setIsEditMode(!isEditMode);
-            setShowSettings(false); // Tutup setting kalau masuk mode edit
+            setShowSettings(false);
           }}
         >
           <Text style={styles.actionBtnText}>
@@ -671,15 +843,13 @@ export default function App() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0d0d0d" },
-
-  // --- STYLING BARU UNTUK MENU SETTINGS MODAL ---
   settingsOverlay: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.7)", // Layar agak gelap di belakang
+    backgroundColor: "rgba(0,0,0,0.7)",
     justifyContent: "center",
     alignItems: "center",
     zIndex: 200,
@@ -721,12 +891,7 @@ const styles = StyleSheet.create({
   },
   connectBtnText: { color: "#000", fontWeight: "bold", fontSize: 14 },
   statusText: { color: "#aaa", fontSize: 13, textAlign: "center" },
-  gyroBox: {
-    backgroundColor: "#222",
-    padding: 12,
-    borderRadius: 8,
-    gap: 12,
-  },
+  gyroBox: { backgroundColor: "#222", padding: 12, borderRadius: 8, gap: 12 },
   gyroRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -741,8 +906,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   closeSettingsText: { color: "#fff", fontWeight: "bold" },
-
-  // --- STYLING MENU BAWAH ---
   bottomMenu: {
     position: "absolute",
     bottom: 15,
@@ -769,8 +932,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     zIndex: 100,
   },
-
-  // --- STYLING ELEMEN GAMEPAD ---
   faceButton: {
     flex: 1,
     justifyContent: "center",
@@ -831,6 +992,34 @@ const styles = StyleSheet.create({
     marginTop: 2,
     textAlign: "center",
   },
+
+  drsBox: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#1b1b1b",
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: "#333",
+  },
+  drsActive: {
+    backgroundColor: "#00e676",
+    borderColor: "#00e676",
+    elevation: 10,
+  },
+  drsText: { color: "#555", fontWeight: "900", fontSize: 20 },
+  drsTextActive: { color: "#000" },
+
+  dashContainer: {
+    flex: 1,
+    backgroundColor: "#1b1b1b",
+    borderRadius: 8,
+    padding: 8,
+    justifyContent: "space-evenly",
+  },
+  dashRow: { flexDirection: "row", alignItems: "center" },
+  dashLabel: { color: "#aaa", fontSize: 11, fontWeight: "bold" },
+
   resizeHandle: {
     position: "absolute",
     right: 0,
@@ -845,4 +1034,65 @@ const styles = StyleSheet.create({
     zIndex: 40,
   },
   resizeHandleText: { color: "#000", fontWeight: "bold", fontSize: 16 },
+
+  // --- STYLING BARU UNTUK GRAFIK MOBIL F1 & BAN ---
+  f1CarContainer: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#1b1b1b",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#333",
+    paddingHorizontal: 10,
+  },
+  tempCol: {
+    alignItems: "flex-end",
+    paddingRight: 10,
+    justifyContent: "center",
+  },
+  tempColRight: {
+    alignItems: "flex-start",
+    paddingLeft: 10,
+    justifyContent: "center",
+  },
+  tyreTempText: { color: "#fff", fontSize: 12, fontWeight: "bold" },
+  carGraphicBody: {
+    width: 28,
+    height: 80,
+    borderColor: "#555",
+    borderWidth: 2,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  carNose: {
+    position: "absolute",
+    top: -8,
+    width: 16,
+    height: 12,
+    backgroundColor: "#555",
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 4,
+  },
+  carCockpit: {
+    width: 14,
+    height: 20,
+    backgroundColor: "#222",
+    borderRadius: 4,
+  },
+  tire: {
+    width: 10,
+    height: 22,
+    borderRadius: 3,
+    position: "absolute",
+    borderWidth: 1,
+    borderColor: "#000",
+  },
+  tireFL: { left: -14, top: 8 },
+  tireFR: { right: -14, top: 8 },
+  tireRL: { left: -14, bottom: 8 },
+  tireRR: { right: -14, bottom: 8 },
 });
