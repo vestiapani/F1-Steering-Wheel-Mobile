@@ -13,44 +13,125 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  ScrollView,
 } from "react-native";
 import { io } from "socket.io-client";
+import Svg, { Path } from "react-native-svg";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // ---------------------------------------------------------------------------
-// Tema Dashboard "Pitwall Mobile" — matte black, aksen neon ala setir F1
+// Tema Dashboard "Sim Racing MFD"
 // ---------------------------------------------------------------------------
 const COLORS = {
   bg: "#050505",
   panel: "#0d0d0d",
   panel2: "#141414",
-  line: "#232323",
+  line: "#333333",
   lineSoft: "#1a1a1a",
-  text: "#e6e6e6",
-  textDim: "#6b6b6b",
-  green: "#17e88f",
-  yellow: "#f5d90a",
+  text: "#ffffff",
+  textDim: "#888888",
+  green: "#00ff00",
+  yellow: "#ffcc00",
   red: "#ff2b4d",
-  amber: "#ffb020",
+  redDark: "#800000",
   cyan: "#00e5ff",
   blue: "#3d7bfd",
   purple: "#b34dff",
 };
 
 const FONT_MONO = Platform.select({
-  ios: "Menlo",
+  ios: "Menlo-Bold",
   android: "monospace",
   default: "monospace",
 });
 
 function fmtMs(ms) {
-  if (!ms) return "—:—.—";
-  const m = Math.floor(ms / 60000);
+  if (!ms) return "00:00.000";
+  const m = Math.floor(ms / 60000)
+    .toString()
+    .padStart(2, "0");
   const s = ((ms % 60000) / 1000).toFixed(3).padStart(6, "0");
   return `${m}:${s}`;
 }
 
+function fmtSessionTime(seconds) {
+  if (!seconds || seconds < 0) return "00:00";
+  const m = Math.floor(seconds / 60)
+    .toString()
+    .padStart(2, "0");
+  const s = Math.floor(seconds % 60)
+    .toString()
+    .padStart(2, "0");
+  return `${m}:${s}`;
+}
+
 // ---------------------------------------------------------------------------
-// Hook Drag & Resize (tidak berubah dari logika aslinya)
+// SVG Icons Replacement
+// ---------------------------------------------------------------------------
+const IconSettings = ({ color = "#fff", size = 24 }) => (
+  <Svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <Path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z" />
+    <Path d="M12 15a3 3 0 100-6 3 3 0 000 6z" />
+  </Svg>
+);
+
+const IconCheck = ({ color = "#fff", size = 24 }) => (
+  <Svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    strokeWidth="3"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <Path d="M20 6L9 17l-5-5" />
+  </Svg>
+);
+
+const IconClose = ({ color = "#fff", size = 24 }) => (
+  <Svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    strokeWidth="3"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <Path d="M18 6L6 18M6 6l12 12" />
+  </Svg>
+);
+
+const IconEdit = ({ color = "#fff", size = 24 }) => (
+  <Svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <Path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+    <Path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+  </Svg>
+);
+
+// ---------------------------------------------------------------------------
+// Hook Drag & Resize
 // ---------------------------------------------------------------------------
 function useDragResizeResponders({
   id,
@@ -64,7 +145,6 @@ function useDragResizeResponders({
   onUpdateLayout,
 }) {
   const shouldSet = () => isEditModeRef.current;
-
   const dragResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: shouldSet,
@@ -179,11 +259,7 @@ function EditableItem({
       }}
     >
       <View
-        style={{
-          width: "100%",
-          height: "100%",
-          opacity: isEditMode ? 0.7 : 1,
-        }}
+        style={{ width: "100%", height: "100%", opacity: isEditMode ? 0.7 : 1 }}
         pointerEvents={isEditMode ? "box-only" : "auto"}
         {...(isEditMode ? dragResponder.panHandlers : {})}
       >
@@ -203,7 +279,7 @@ function EditableItem({
           onPress={() => onDelete(id)}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Text style={styles.deleteHandleText}>×</Text>
+          <IconClose size={16} color="#fff" />
         </TouchableOpacity>
       )}
     </Animated.View>
@@ -211,7 +287,96 @@ function EditableItem({
 }
 
 // ---------------------------------------------------------------------------
-// Komponen Visual — kontrol tepi (SVG-style, presisi, subtle saat idle)
+// Pit Box / Library Item
+// ---------------------------------------------------------------------------
+function PitBoxItem({ item, screenHeight, onDropAdd }) {
+  const pan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const responder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        Animated.spring(scale, {
+          toValue: 1.18,
+          useNativeDriver: false,
+        }).start();
+      },
+      onPanResponderMove: Animated.event([null, { dx: pan.x, dy: pan.y }], {
+        useNativeDriver: false,
+      }),
+      onPanResponderRelease: (evt, gesture) => {
+        Animated.spring(scale, { toValue: 1, useNativeDriver: false }).start();
+        if (gesture.moveY < screenHeight - 90) {
+          onDropAdd(item, gesture.moveX, gesture.moveY);
+        }
+        Animated.spring(pan, {
+          toValue: { x: 0, y: 0 },
+          useNativeDriver: false,
+        }).start();
+      },
+    }),
+  ).current;
+
+  return (
+    <Animated.View
+      {...responder.panHandlers}
+      style={[
+        styles.pitBoxItem,
+        {
+          transform: [{ translateX: pan.x }, { translateY: pan.y }, { scale }],
+        },
+      ]}
+    >
+      <Text style={styles.pitBoxItemText}>{item.label || item.id}</Text>
+    </Animated.View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TOP SHIFT BAR
+// ---------------------------------------------------------------------------
+const TOP_SEGMENTS = 22;
+const TopShiftBar = ({ litDots }) => {
+  const [blink, setBlink] = useState(true);
+
+  useEffect(() => {
+    const iv = setInterval(() => setBlink((b) => !b), 75);
+    return () => clearInterval(iv);
+  }, []);
+
+  // Animasi kedip (redlining) mulai aktif waktu lampu udah masuk area ungu
+  const isRedlining = litDots >= 16;
+  const showLights = !isRedlining || blink;
+
+  return (
+    <View style={styles.topShiftBar} pointerEvents="none">
+      {Array.from({ length: TOP_SEGMENTS }).map((_, i) => {
+        let color = "#141414";
+        if (i < litDots) {
+          // Atur proporsi warna: ujungnya ungu semua, hijau disunat, merah dibanyakin
+          if (i >= 16)
+            color = "#b34dff"; // 6 bar ujung ungu
+          else if (i >= 5)
+            color = COLORS.red; // 11 bar tengah merah
+          else color = COLORS.green; // 5 bar pertama hijau
+        }
+        return (
+          <View
+            key={i}
+            style={[
+              styles.topShiftSeg,
+              { backgroundColor: showLights ? color : "#141414" },
+            ]}
+          />
+        );
+      })}
+    </View>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Komponen Visual UI
 // ---------------------------------------------------------------------------
 const FaceButton = ({ label, color, pressed }) => (
   <View
@@ -263,148 +428,158 @@ const DrsIndicator = ({ active }) => (
 );
 
 // ---------------------------------------------------------------------------
-// TOP SHIFT BAR — deretan LED persis di bibir atas layar, kedip saat redline
+// DYNAMIC FLAG INDICATOR
 // ---------------------------------------------------------------------------
-const TOP_SEGMENTS = 22;
+const FlagIndicator = ({ flag }) => {
+  let bgColor = COLORS.panel2;
+  let textColor = COLORS.textDim;
+  let text = "FLAG";
 
-const TopShiftBar = ({ litDots }) => {
-  const [blink, setBlink] = useState(true);
-
-  useEffect(() => {
-    const iv = setInterval(() => setBlink((b) => !b), 75);
-    return () => clearInterval(iv);
-  }, []);
-
-  const isRedlining = litDots >= TOP_SEGMENTS - 3;
-  const showLights = !isRedlining || blink;
+  if (flag === "RED") {
+    bgColor = COLORS.red;
+    textColor = "#000";
+    text = "RED";
+  } else if (flag === "DOUBLE_YELLOW") {
+    bgColor = COLORS.yellow;
+    textColor = "#000";
+    text = "2x YLW";
+  } else if (flag === "YELLOW") {
+    bgColor = COLORS.yellow;
+    textColor = "#000";
+    text = "YELLOW";
+  } else if (flag === "BLUE") {
+    bgColor = COLORS.blue;
+    textColor = "#fff";
+    text = "BLUE";
+  } else if (flag === "GREEN") {
+    bgColor = COLORS.green;
+    textColor = "#000";
+    text = "GREEN";
+  }
 
   return (
-    <View style={styles.topShiftBar} pointerEvents="none">
-      {Array.from({ length: TOP_SEGMENTS }).map((_, i) => {
-        let color = "#141414";
-        if (i < litDots) {
-          if (i >= TOP_SEGMENTS - 3) color = COLORS.blue;
-          else if (i >= TOP_SEGMENTS * 0.6) color = COLORS.red;
-          else color = COLORS.green;
-        }
-        const finalColor = showLights ? color : "#141414";
-        return (
-          <View
-            key={i}
-            style={[styles.topShiftSeg, { backgroundColor: finalColor }]}
-          />
-        );
-      })}
+    <View
+      style={[
+        styles.flagBox,
+        {
+          backgroundColor: bgColor,
+          borderColor: flag === "NONE" ? COLORS.line : bgColor,
+        },
+      ]}
+    >
+      <Text style={[styles.flagText, { color: textColor }]}>{text}</Text>
     </View>
   );
 };
 
 // ---------------------------------------------------------------------------
-// CENTER DASH — jantung MFD: gear (kiri) · siluet F1 + 4 ban (tengah) · speed (kanan)
+// CENTER DASH — MFD Sim Racing Redesign
 // ---------------------------------------------------------------------------
-const tyreTempColor = (t) => {
-  if (!t) return "#1a1f28";
-  if (t < 85) return COLORS.cyan;
-  if (t <= 105) return COLORS.green;
-  return COLORS.red;
-};
-
-const CenterDash = ({ telemetry, gearLabel }) => {
+const MfdDash = ({ telemetry, gearLabel }) => {
   const temps = telemetry.tyreTemp || [0, 0, 0, 0];
-  const fl = temps[2] || 0;
-  const fr = temps[3] || 0;
-  const rl = temps[0] || 0;
-  const rr = temps[1] || 0;
 
-  const deltaVal = telemetry.delta != null ? parseFloat(telemetry.delta) : null;
+  // Menampilkan delta jarak dalam meter (karena F1 2020 tidak punya native time-delta)
+  const deltaVal = telemetry.delta != null ? parseFloat(telemetry.delta) : 0;
   const deltaColor =
-    deltaVal == null
-      ? COLORS.textDim
-      : deltaVal < 0
-        ? COLORS.green
-        : deltaVal > 0
-          ? COLORS.red
-          : COLORS.textDim;
-  const deltaStr =
-    deltaVal == null ? "—" : `${deltaVal > 0 ? "+" : ""}${deltaVal.toFixed(2)}`;
+    deltaVal < 0 ? COLORS.green : deltaVal > 0 ? COLORS.red : COLORS.text;
+  const deltaStr = deltaVal !== 0 ? `+${deltaVal.toFixed(1)}m` : "0.0";
+
   const ersPct = Math.min(
     100,
     Math.max(0, Math.round(((telemetry.ersEnergy || 0) / 4000000) * 100)),
   );
+  const rpmDisplay = Math.round(telemetry.rpm || 0).toString();
+  const speedDisplay = Math.round(telemetry.speed || 0).toString();
+  const lapDisplay = "5";
+  const sessionTimeDisplay = fmtSessionTime(telemetry.sessionTime);
 
   return (
-    <View style={styles.centerDash}>
-      <View style={styles.centerDashMain}>
-        <View style={styles.gearSpeedCol}>
-          <Text style={styles.dashMiniLabel}>GEAR</Text>
-          <Text style={styles.gearBig}>{gearLabel}</Text>
-        </View>
-
-        <View style={styles.carSilhouetteWrap}>
-          <View
-            style={[
-              styles.tireCorner,
-              styles.tireFL,
-              { backgroundColor: tyreTempColor(fl) },
-            ]}
-          />
-          <View
-            style={[
-              styles.tireCorner,
-              styles.tireFR,
-              { backgroundColor: tyreTempColor(fr) },
-            ]}
-          />
-          <View style={styles.carBody}>
-            <View style={styles.carNoseShape} />
-            <View style={styles.carCockpitShape} />
-          </View>
-          <View
-            style={[
-              styles.tireCorner,
-              styles.tireRL,
-              { backgroundColor: tyreTempColor(rl) },
-            ]}
-          />
-          <View
-            style={[
-              styles.tireCorner,
-              styles.tireRR,
-              { backgroundColor: tyreTempColor(rr) },
-            ]}
-          />
-        </View>
-
-        <View style={styles.gearSpeedCol}>
-          <Text style={styles.dashMiniLabel}>KM/H</Text>
-          <Text style={styles.speedBig}>
-            {Math.round(telemetry.speed || 0)}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.centerDashStats}>
-        <View style={styles.statCell}>
-          <Text style={styles.statLabel}>LAP</Text>
-          <Text style={[styles.statVal, { color: COLORS.green }]}>
+    <View style={styles.mfdContainer}>
+      <View style={styles.mfdRowTop}>
+        <View style={styles.mfdCellTop}>
+          <Text style={[styles.mfdTextTop, { color: COLORS.green }]}>
             {fmtMs(telemetry.lastLapMs)}
           </Text>
         </View>
-        <View style={styles.statCell}>
-          <Text style={styles.statLabel}>DELTA</Text>
-          <Text style={[styles.statVal, { color: deltaColor }]}>
+        <View style={[styles.mfdCellTop, styles.borderSidesRed]}>
+          <Text style={[styles.mfdTextTop, { color: COLORS.red }]}>
+            {rpmDisplay}
+          </Text>
+        </View>
+        <View style={styles.mfdCellTop}>
+          <Text style={[styles.mfdTextTop, { color: deltaColor }]}>
             {deltaStr}
           </Text>
         </View>
-        <View style={styles.statCell}>
-          <Text style={styles.statLabel}>SOC</Text>
-          <Text style={[styles.statVal, { color: COLORS.cyan }]}>
-            {ersPct}%
-          </Text>
+      </View>
+      <View style={styles.mfdRowMiddle}>
+        <View style={styles.mfdColLeft}>
+          <View style={styles.mfdSubCell}>
+            <Text style={styles.mfdMiniLabel}>SPEED</Text>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "baseline",
+                marginTop: 8,
+              }}
+            >
+              <Text style={[styles.mfdWhiteBig, { marginTop: 0 }]}>
+                {speedDisplay}
+              </Text>
+              <Text
+                style={{
+                  color: COLORS.textDim,
+                  fontFamily: FONT_MONO,
+                  fontSize: 10,
+                  marginLeft: 2,
+                }}
+              >
+                KM/H
+              </Text>
+            </View>
+          </View>
+          <View style={[styles.mfdSubCell, styles.borderTopWhite]}>
+            <Text style={styles.mfdMiniLabel}>LAP</Text>
+            <Text style={styles.mfdWhiteBig}>{lapDisplay}</Text>
+          </View>
+          <View style={[styles.mfdSubCell, styles.borderTopWhite]}>
+            <Text style={styles.mfdMiniLabel}>SOC</Text>
+            <Text style={[styles.mfdWhiteBig, { color: COLORS.green }]}>
+              {ersPct}
+            </Text>
+          </View>
         </View>
-        <View style={styles.statCell}>
-          <Text style={styles.statLabel}>FUEL</Text>
-          <Text style={styles.statVal}>{(telemetry.fuel || 0).toFixed(1)}</Text>
+        <View style={styles.mfdColCenter}>
+          <Text style={styles.mfdGearLabel}>GEAR</Text>
+          <Text style={styles.mfdGearNumber}>{gearLabel}</Text>
+        </View>
+        <View style={styles.mfdColRight}>
+          <View style={styles.mfdTyreGrid}>
+            <View style={styles.mfdTyreBox}>
+              <Text style={styles.mfdTyreText}>{temps[2] || 21}</Text>
+            </View>
+            <View style={styles.mfdTyreBox}>
+              <Text style={styles.mfdTyreText}>{temps[3] || 21}</Text>
+            </View>
+            <View style={styles.mfdTyreBox}>
+              <Text style={styles.mfdTyreText}>{temps[0] || 17}</Text>
+            </View>
+            <View style={styles.mfdTyreBox}>
+              <Text style={styles.mfdTyreText}>{temps[1] || 17}</Text>
+            </View>
+          </View>
+          <View
+            style={[styles.mfdSubCell, styles.borderTopWhite, { flex: 0.5 }]}
+          >
+            <Text style={styles.mfdMiniLabel}>BBAL</Text>
+            <Text style={styles.mfdWhiteBig}>+1.0</Text>
+          </View>
+        </View>
+      </View>
+      <View style={styles.mfdRowBottom}>
+        <Text style={styles.mfdYellowTime}>{sessionTimeDisplay}</Text>
+        <View style={styles.mfdBottomBar}>
+          <View style={[styles.mfdBarFill, { width: `${ersPct}%` }]}></View>
         </View>
       </View>
     </View>
@@ -412,90 +587,68 @@ const CenterDash = ({ telemetry, gearLabel }) => {
 };
 
 // ---------------------------------------------------------------------------
-// PIT BOX — laci komponen yang belum terpakai, drag ke kanvas untuk pasang
-// ---------------------------------------------------------------------------
-const PIT_BOX_HEIGHT = 128;
-
-function PitBoxItem({ item, screenHeight, onDropAdd }) {
-  const pan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
-  const scale = useRef(new Animated.Value(1)).current;
-
-  const responder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        Animated.spring(scale, {
-          toValue: 1.18,
-          useNativeDriver: false,
-        }).start();
-      },
-      onPanResponderMove: Animated.event([null, { dx: pan.x, dy: pan.y }], {
-        useNativeDriver: false,
-      }),
-      onPanResponderRelease: (evt, gesture) => {
-        Animated.spring(scale, { toValue: 1, useNativeDriver: false }).start();
-        const droppedAbovePitBox =
-          gesture.moveY < screenHeight - PIT_BOX_HEIGHT;
-        if (droppedAbovePitBox && gesture.moveY > 0) {
-          onDropAdd(item, gesture.moveX, gesture.moveY);
-        }
-        Animated.spring(pan, {
-          toValue: { x: 0, y: 0 },
-          useNativeDriver: false,
-        }).start();
-      },
-    }),
-  ).current;
-
-  return (
-    <Animated.View
-      {...responder.panHandlers}
-      style={[
-        styles.pitBoxItem,
-        {
-          transform: [{ translateX: pan.x }, { translateY: pan.y }, { scale }],
-        },
-      ]}
-    >
-      <Text style={styles.pitBoxItemText}>{item.label}</Text>
-    </Animated.View>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Katalog default semua komponen yang bisa berada di kanvas
+// Katalog Library & Layout Awal
 // ---------------------------------------------------------------------------
 const MIN_SIZE = {
   button: { w: 40, h: 40 },
   gas: { w: 40, h: 100 },
-  centerdash: { w: 220, h: 150 },
-  paddle: { w: 90, h: 46 },
+  mfd: { w: 320, h: 220 },
   drs: { w: 60, h: 40 },
+  paddle: { w: 90, h: 46 },
+  flag: { w: 70, h: 40 },
   default: { w: 60, h: 30 },
 };
 
-function buildDefaultItems(SCREEN_W, SCREEN_H) {
+function buildCatalog() {
   return [
+    { id: "X", type: "button", label: "X", color: COLORS.cyan, w: 65, h: 65 },
+    { id: "Y", type: "button", label: "Y", color: COLORS.yellow, w: 55, h: 55 },
+    { id: "A", type: "button", label: "A", color: COLORS.green, w: 60, h: 60 },
+    { id: "B", type: "button", label: "B", color: COLORS.red, w: 60, h: 60 },
     {
-      id: "X",
+      id: "Dpad_Up",
       type: "button",
-      label: "X",
-      color: COLORS.cyan,
-      x: SCREEN_W - 230,
-      y: 40,
-      w: 65,
-      h: 65,
+      label: "⇧",
+      color: COLORS.textDim,
+      w: 50,
+      h: 50,
     },
     {
-      id: "Y",
+      id: "Dpad_Dn",
       type: "button",
-      label: "Y",
-      color: COLORS.yellow,
-      x: SCREEN_W - 150,
-      y: 220,
-      w: 55,
-      h: 55,
+      label: "⇩",
+      color: COLORS.textDim,
+      w: 50,
+      h: 50,
     },
+    {
+      id: "Dpad_L",
+      type: "button",
+      label: "⇦",
+      color: COLORS.textDim,
+      w: 50,
+      h: 50,
+    },
+    {
+      id: "Dpad_R",
+      type: "button",
+      label: "⇨",
+      color: COLORS.textDim,
+      w: 50,
+      h: 50,
+    },
+    { id: "LB", type: "paddle", label: "－", side: "left", w: 100, h: 50 },
+    { id: "RB", type: "paddle", label: "＋", side: "right", w: 100, h: 50 },
+    { id: "R2", type: "r2", label: "R2", w: 180, h: 180 },
+    { id: "GAS", type: "gas", label: "GAS", w: 60, h: 180 },
+    { id: "DASH", type: "mfd", label: "MFD", w: 350, h: 230 },
+    { id: "DRS", type: "drs", label: "DRS", w: 70, h: 40 },
+    { id: "FLAG", type: "flag", label: "FLAG", w: 90, h: 45 },
+  ];
+}
+
+function buildInitialLayout(SCREEN_W, SCREEN_H) {
+  return [
     {
       id: "A",
       type: "button",
@@ -536,32 +689,32 @@ function buildDefaultItems(SCREEN_W, SCREEN_H) {
       w: 100,
       h: 50,
     },
-    { id: "R2", type: "r2", x: 40, y: SCREEN_H - 220, w: 180, h: 180 },
-    {
-      id: "GAS",
-      type: "gas",
-      x: SCREEN_W - 100,
-      y: SCREEN_H / 2 - 100,
-      w: 60,
-      h: 180,
-    },
     {
       id: "DASH",
-      type: "centerdash",
+      type: "mfd",
       label: "MFD",
-      x: SCREEN_W / 2 - 150,
-      y: SCREEN_H / 2 - 100,
-      w: 300,
-      h: 190,
+      x: SCREEN_W / 2 - 175,
+      y: SCREEN_H / 2 - 120,
+      w: 350,
+      h: 230,
     },
     {
       id: "DRS",
       type: "drs",
       label: "DRS",
-      x: SCREEN_W / 2 + 160,
-      y: 30,
+      x: SCREEN_W / 2 + 100,
+      y: 35,
       w: 70,
       h: 40,
+    },
+    {
+      id: "FLAG",
+      type: "flag",
+      label: "FLAG",
+      x: SCREEN_W / 2 - 45,
+      y: 35,
+      w: 90,
+      h: 45,
     },
   ];
 }
@@ -585,14 +738,11 @@ export default function App() {
     maxRpm: 13000,
     drs: 0,
     tyreTemp: [0, 0, 0, 0],
-    ersMode: 0,
     ersEnergy: 0,
-    fuel: 0,
     delta: 0,
     lastLapMs: 0,
-    brakeBias: 0,
   });
-
+  const [flagState, setFlagState] = useState("NONE");
   const [layout, setLayout] = useState([]);
   const [pressedIds, setPressedIds] = useState({});
   const [gasPercent, setGasPercent] = useState(0);
@@ -610,7 +760,6 @@ export default function App() {
   });
   const socketRef = useRef(null);
   const gyroSubscription = useRef(null);
-  const neutralGamma = useRef(null);
   const gyroInvertedRef = useRef(false);
   const layoutRef = useRef(layout);
   const isEditModeRef = useRef(isEditMode);
@@ -618,29 +767,62 @@ export default function App() {
   const activeTouches = useRef({});
   const gasPercentRef = useRef(0);
 
+  const LAYOUT_KEY = "@f1_mfd_layout";
+
+  // --- AUTOMATIC LOAD LAYOUT DARI ASYNC STORAGE ---
   useEffect(() => {
-    if (layout.length === 0 && SCREEN_W > 0) {
-      setLayout(buildDefaultItems(SCREEN_W, SCREEN_H));
+    const initLayout = async () => {
+      if (SCREEN_W === 0) return;
+      try {
+        const savedLayout = await AsyncStorage.getItem(LAYOUT_KEY);
+        if (savedLayout !== null) {
+          setLayout(JSON.parse(savedLayout));
+        } else {
+          setLayout(buildInitialLayout(SCREEN_W, SCREEN_H));
+        }
+      } catch (e) {
+        console.error("Gagal load layout:", e);
+        setLayout(buildInitialLayout(SCREEN_W, SCREEN_H));
+      }
+    };
+
+    if (layout.length === 0) {
+      initLayout();
     }
   }, [SCREEN_W, SCREEN_H]);
 
   useEffect(() => {
     gyroInvertedRef.current = gyroInverted;
   }, [gyroInverted]);
+
+  // --- AUTOMATIC SAVE LAYOUT KE ASYNC STORAGE ---
   useEffect(() => {
     layoutRef.current = layout;
+
+    const saveLayoutToLocal = async () => {
+      if (layout.length > 0) {
+        try {
+          await AsyncStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
+        } catch (e) {
+          console.error("Gagal save layout:", e);
+        }
+      }
+    };
+
+    saveLayoutToLocal();
   }, [layout]);
+
   useEffect(() => {
     isEditModeRef.current = isEditMode;
   }, [isEditMode]);
+
   useEffect(() => {
     showSettingsRef.current = showSettings;
   }, [showSettings]);
 
-  // Katalog referensi lengkap (posisi default) untuk mengisi Pit Box
   const catalog = useMemo(
-    () => (SCREEN_W > 0 ? buildDefaultItems(SCREEN_W, SCREEN_H) : []),
-    [SCREEN_W, SCREEN_H],
+    () => (SCREEN_W > 0 ? buildCatalog() : []),
+    [SCREEN_W],
   );
   const availableInPitBox = catalog.filter(
     (c) => !layout.some((l) => l.id === c.id),
@@ -648,7 +830,6 @@ export default function App() {
 
   const connect = () => {
     if (socketRef.current) socketRef.current.disconnect();
-
     const url = serverIp.startsWith("http") ? serverIp : `http://${serverIp}`;
     const socket = io(url, { transports: ["websocket"] });
     socketRef.current = socket;
@@ -656,50 +837,97 @@ export default function App() {
     socket.on("connect", () => setIsConnected(true));
     socket.on("disconnect", () => setIsConnected(false));
 
-    socket.on("f1Data", (data) =>
-      setTelemetry((prev) => ({ ...prev, ...data })),
-    );
+    socket.on("telemetry", (data) => {
+      setTelemetry((prev) => ({ ...prev, ...data }));
+    });
+    socket.on("leaderboard", (rows) => {
+      const me = rows.find((r) => r.isPlayer);
+      if (me) {
+        setTelemetry((prev) => ({
+          ...prev,
+          lastLapMs: me.lastLapMs || prev.lastLapMs,
+          delta: me.intervalM != null ? me.intervalM : prev.delta,
+        }));
+      }
+    });
+    socket.on("flags", (data) => {
+      const present = new Set((data.zones || []).map((z) => z.flag));
+      if (data.ownCarFlag && data.ownCarFlag !== "NONE")
+        present.add(data.ownCarFlag);
 
-    let lastVibrationAt = 0;
-    socket.on("vibrationData", ({ large, small }) => {
-      const intensity = Math.max(large, small);
-      if (intensity <= 5) return;
-      const now = Date.now();
-      if (now - lastVibrationAt < 60) return;
-      lastVibrationAt = now;
-      const style =
-        intensity > 170
-          ? Haptics.ImpactFeedbackStyle.Heavy
-          : intensity > 80
-            ? Haptics.ImpactFeedbackStyle.Medium
-            : Haptics.ImpactFeedbackStyle.Light;
-      Haptics.impactAsync(style);
+      const yellowCount = (data.zones || []).filter(
+        (z) => z.flag === "YELLOW",
+      ).length;
+
+      let activeFlag = "NONE";
+      if (present.has("RED") || data.trackStatus === "RED") activeFlag = "RED";
+      else if (yellowCount >= 2) activeFlag = "DOUBLE_YELLOW";
+      else if (
+        present.has("YELLOW") ||
+        data.trackStatus === "SAFETY CAR" ||
+        data.trackStatus === "VIRTUAL SC"
+      )
+        activeFlag = "YELLOW";
+      else if (present.has("BLUE")) activeFlag = "BLUE";
+      else if (present.has("GREEN")) activeFlag = "GREEN";
+
+      setFlagState(activeFlag);
     });
   };
 
   useEffect(() => {
     const interval = setInterval(() => {
-      if (socketRef.current?.connected) {
+      if (socketRef.current?.connected)
         socketRef.current.volatile.emit("controllerInput", inputRef.current);
-      }
     }, 33);
-
     return () => {
       clearInterval(interval);
       socketRef.current?.disconnect();
     };
   }, []);
 
-  const updateItemLayout = (id, newLayout) => {
+  // Gyro Handling
+  useEffect(() => {
+    if (!gyroEnabled) {
+      gyroSubscription.current?.remove();
+      gyroSubscription.current = null;
+      inputRef.current.LX = 0;
+      return;
+    }
+
+    DeviceMotion.setUpdateInterval(16);
+
+    gyroSubscription.current = DeviceMotion.addListener((motion) => {
+      if (!motion.rotation) return;
+
+      let { beta, gamma } = motion.rotation;
+
+      if (Math.abs(gamma) > 1.5) {
+        if (beta > 0) {
+          beta = Math.PI - beta;
+        } else {
+          beta = -Math.PI - beta;
+        }
+      }
+
+      const dir = gyroInvertedRef.current ? -1 : 1;
+      const MAX_TILT = 1.0;
+
+      inputRef.current.LX = Math.max(-1, Math.min(1, (beta / MAX_TILT) * dir));
+    });
+
+    return () => {
+      gyroSubscription.current?.remove();
+      gyroSubscription.current = null;
+    };
+  }, [gyroEnabled]);
+
+  const updateItemLayout = (id, newLayout) =>
     setLayout((prev) =>
       prev.map((item) => (item.id === id ? { ...item, ...newLayout } : item)),
     );
-  };
-
-  const removeItem = (id) => {
+  const removeItem = (id) =>
     setLayout((prev) => prev.filter((item) => item.id !== id));
-  };
-
   const addItemFromCatalog = (catalogItem, dropX, dropY) => {
     setLayout((prev) => {
       if (prev.some((i) => i.id === catalogItem.id)) return prev;
@@ -714,42 +942,21 @@ export default function App() {
     });
   };
 
-  useEffect(() => {
-    if (!gyroEnabled) {
-      gyroSubscription.current?.remove();
-      gyroSubscription.current = null;
-      inputRef.current.LX = 0;
-      return;
-    }
-
-    DeviceMotion.setUpdateInterval(16);
-
-    gyroSubscription.current = DeviceMotion.addListener((motion) => {
-      if (!motion.rotation) return;
-      const { beta } = motion.rotation;
-
-      const dir = gyroInvertedRef.current ? -1 : 1;
-      const MAX_TILT = 0.8;
-
-      inputRef.current.LX = Math.max(-1, Math.min(1, (beta / MAX_TILT) * dir));
-    });
-
-    return () => {
-      gyroSubscription.current?.remove();
-      gyroSubscription.current = null;
-    };
-  }, [gyroEnabled]);
-
-  const rpmPercentage = Math.min((telemetry.rpm / telemetry.maxRpm) * 100, 100);
-  const topLitDots = Math.round((rpmPercentage / 100) * TOP_SEGMENTS);
   const gearLabel =
     telemetry.gear === -1 ? "R" : telemetry.gear === 0 ? "N" : telemetry.gear;
+  const rpmPercentage = Math.min((telemetry.rpm / telemetry.maxRpm) * 100, 100);
+
+  let topLitDots = 0;
+  if (rpmPercentage >= 74) {
+    const fillRatio = Math.min(1, (rpmPercentage - 74) / 21);
+    topLitDots = Math.round(fillRatio * TOP_SEGMENTS);
+  }
 
   const hitTest = (px, py) => {
     const items = layoutRef.current;
     for (let i = items.length - 1; i >= 0; i--) {
       const it = items[i];
-      if (it.type === "centerdash" || it.type === "drs") continue;
+      if (it.type === "mfd" || it.type === "drs") continue;
       if (px >= it.x && px <= it.x + it.w && py >= it.y && py <= it.y + it.h)
         return it;
     }
@@ -831,10 +1038,12 @@ export default function App() {
             pressed={!!pressedIds[item.id]}
           />
         );
+      case "mfd":
+        return <MfdDash telemetry={telemetry} gearLabel={gearLabel} />;
       case "drs":
         return <DrsIndicator active={telemetry.drs === 1} />;
-      case "centerdash":
-        return <CenterDash telemetry={telemetry} gearLabel={gearLabel} />;
+      case "flag":
+        return <FlagIndicator flag={flagState} />;
       default:
         return null;
     }
@@ -849,138 +1058,148 @@ export default function App() {
       onTouchCancel={handleTouchEnd}
     >
       <StatusBar hidden />
-
       <TopShiftBar litDots={topLitDots} />
 
       {isEditMode && (
         <View style={styles.editDimOverlay} pointerEvents="none" />
       )}
 
-      {layout.map((item) => (
-        <EditableItem
-          key={item.id}
-          {...item}
-          {...(MIN_SIZE[item.type] ?? MIN_SIZE.default)}
-          isEditMode={isEditMode}
-          onUpdateLayout={updateItemLayout}
-          onDelete={removeItem}
-        >
-          {renderContent(item)}
-        </EditableItem>
-      ))}
+      {layout.map((item) => {
+        const minBounds = MIN_SIZE[item.type] ?? MIN_SIZE.default;
 
+        return (
+          <EditableItem
+            key={item.id}
+            {...item}
+            minW={minBounds.w}
+            minH={minBounds.h}
+            isEditMode={isEditMode}
+            onUpdateLayout={updateItemLayout}
+            onDelete={removeItem}
+          >
+            {renderContent(item)}
+          </EditableItem>
+        );
+      })}
+
+      {/* Floating Button */}
+      {!showSettings && (
+        <View style={styles.floatingMenu}>
+          {isEditMode ? (
+            <TouchableOpacity
+              style={[styles.floatingBtn, { backgroundColor: COLORS.green }]}
+              onPress={() => setIsEditMode(false)}
+            >
+              <IconCheck color="#000" />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.floatingBtn}
+              onPress={() => setShowSettings(true)}
+            >
+              <IconSettings />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* Panel Pit Box (Library) */}
+      {isEditMode && (
+        <View style={styles.libraryContainer}>
+          <Text style={styles.libraryTitle}>LIBRARY BUTTON (Drag ke Atas)</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.libraryScroll}
+          >
+            {availableInPitBox.length === 0 ? (
+              <Text style={styles.libraryEmpty}>Semua tombol terpakai</Text>
+            ) : (
+              availableInPitBox.map((item) => (
+                <PitBoxItem
+                  key={item.id}
+                  item={item}
+                  screenHeight={SCREEN_H}
+                  onDropAdd={addItemFromCatalog}
+                />
+              ))
+            )}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Panel Pengaturan PC & Gyro (RESPONSIF DENGAN SCROLLVIEW) */}
       {showSettings && (
         <View style={styles.settingsOverlay}>
           <View style={styles.settingsBox}>
-            <Text style={styles.settingsTitle}>
-              Pengaturan Koneksi &amp; Sensor
-            </Text>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.settingsContent}
+            >
+              <Text style={styles.settingsTitle}>Pengaturan Aplikasi</Text>
 
-            <View style={styles.connectRow}>
-              <TextInput
-                style={styles.ipInput}
-                value={serverIp}
-                onChangeText={setServerIp}
-                placeholder="IP:PORT laptop, mis. 127.0.0.1:3000"
-                placeholderTextColor={COLORS.textDim}
-                editable={!isConnected}
-              />
-              <TouchableOpacity style={styles.connectBtn} onPress={connect}>
-                <Text style={styles.connectBtnText}>
-                  {isConnected ? "Reconnect" : "Connect"}
+              <View style={styles.connectRow}>
+                <TextInput
+                  style={styles.ipInput}
+                  value={serverIp}
+                  onChangeText={setServerIp}
+                  placeholder="IP:PORT PC"
+                  placeholderTextColor={COLORS.textDim}
+                  editable={!isConnected}
+                />
+                <TouchableOpacity style={styles.connectBtn} onPress={connect}>
+                  <Text style={styles.connectBtnText}>
+                    {isConnected ? "Reconnect" : "Connect"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.statusText}>
+                {isConnected ? "🟢 Connected to PC Server" : "🔴 Disconnected"}
+              </Text>
+
+              <View style={styles.gyroBox}>
+                <View style={styles.gyroRow}>
+                  <Text style={styles.gyroLabel}>Aktifkan Gyro (Setir)</Text>
+                  <Switch
+                    value={gyroEnabled}
+                    onValueChange={setGyroEnabled}
+                    trackColor={{ false: COLORS.line, true: COLORS.green }}
+                    thumbColor="#fff"
+                  />
+                </View>
+                <View style={styles.gyroRow}>
+                  <Text style={styles.gyroLabel}>Invert Gyro (Kiri/Kanan)</Text>
+                  <Switch
+                    value={gyroInverted}
+                    onValueChange={setGyroInverted}
+                    trackColor={{ false: COLORS.line, true: COLORS.yellow }}
+                    thumbColor="#fff"
+                  />
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.editLayoutModalBtn}
+                onPress={() => {
+                  setShowSettings(false);
+                  setIsEditMode(true);
+                }}
+              >
+                <IconEdit color={COLORS.cyan} size={18} />
+                <Text style={styles.editLayoutModalText}>
+                  Ubah Tata Letak (Edit Layout)
                 </Text>
               </TouchableOpacity>
-            </View>
-            <Text style={styles.statusText}>
-              Status: {isConnected ? "🟢 Terhubung ke PC" : "🔴 Terputus"}
-            </Text>
 
-            <View style={styles.gyroBox}>
-              <View style={styles.gyroRow}>
-                <Text style={styles.gyroLabel}>Aktifkan Gyro (Setir)</Text>
-                <Switch
-                  value={gyroEnabled}
-                  onValueChange={setGyroEnabled}
-                  trackColor={{ false: COLORS.line, true: COLORS.green }}
-                  thumbColor="#fff"
-                />
-              </View>
-              <View style={styles.gyroRow}>
-                <Text style={styles.gyroLabel}>Invert Gyro (Kiri/Kanan)</Text>
-                <Switch
-                  value={gyroInverted}
-                  onValueChange={setGyroInverted}
-                  trackColor={{ false: COLORS.line, true: COLORS.amber }}
-                  thumbColor="#fff"
-                />
-              </View>
-            </View>
-
-            <TouchableOpacity
-              style={styles.editLayoutBtn}
-              onPress={() => {
-                setShowSettings(false);
-                setIsEditMode(true);
-              }}
-            >
-              <Text style={styles.editLayoutBtnText}>✏️ Ubah Layout</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.closeSettingsBtn}
-              onPress={() => setShowSettings(false)}
-            >
-              <Text style={styles.closeSettingsText}>Tutup Pengaturan</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.closeSettingsBtn}
+                onPress={() => setShowSettings(false)}
+              >
+                <Text style={styles.closeSettingsText}>Tutup</Text>
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
-      )}
-
-      {!isEditMode && !showSettings && (
-        <View style={styles.bottomMenu}>
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => setShowSettings(true)}
-          >
-            <Text style={styles.actionBtnText}>⚙️ Pengaturan</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {isEditMode && (
-        <>
-          <View style={styles.bottomMenu}>
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.actionBtnDone]}
-              onPress={() => setIsEditMode(false)}
-            >
-              <Text style={styles.actionBtnText}>✓ Selesai Edit</Text>
-            </TouchableOpacity>
-          </View>
-
-          <Text style={styles.editHint}>
-            Geser komponen untuk memindah. Tarik ⤡ untuk ubah ukuran. Tekan ×
-            untuk melepas ke Pit Box.
-          </Text>
-
-          <View style={styles.pitBox}>
-            <Text style={styles.pitBoxTitle}>PIT BOX</Text>
-            <View style={styles.pitBoxRow}>
-              {availableInPitBox.length === 0 ? (
-                <Text style={styles.pitBoxEmpty}>Semua komponen aktif</Text>
-              ) : (
-                availableInPitBox.map((item) => (
-                  <PitBoxItem
-                    key={item.id}
-                    item={item}
-                    screenHeight={SCREEN_H}
-                    onDropAdd={addItemFromCatalog}
-                  />
-                ))
-              )}
-            </View>
-          </View>
-        </>
       )}
     </View>
   );
@@ -988,8 +1207,16 @@ export default function App() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
+  editDimOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    zIndex: 5,
+  },
 
-  // ---- top shift bar ----
   topShiftBar: {
     position: "absolute",
     top: 0,
@@ -1004,46 +1231,55 @@ const styles = StyleSheet.create({
   },
   topShiftSeg: { flex: 1, marginVertical: 2, borderRadius: 1 },
 
-  editDimOverlay: {
+  floatingMenu: {
     position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    zIndex: 5,
+    top: 25,
+    right: 20,
+    flexDirection: "row",
+    gap: 12,
+    zIndex: 999,
+  },
+  floatingBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(30,30,30,0.8)",
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    justifyContent: "center",
+    alignItems: "center",
   },
 
-  // ---- settings ----
+  // --- MODAL SETTINGS (RESPONSIF HEIGHT & SCROLL) ---
   settingsOverlay: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.82)",
+    backgroundColor: "rgba(0,0,0,0.85)",
     justifyContent: "center",
     alignItems: "center",
-    zIndex: 200,
+    zIndex: 1000,
   },
   settingsBox: {
     backgroundColor: COLORS.panel,
-    padding: 24,
     borderRadius: 10,
-    width: 400,
-    maxWidth: "90%",
-    gap: 16,
+    width: "90%",
+    maxWidth: 400,
+    maxHeight: "90%",
     borderWidth: 1,
     borderColor: COLORS.line,
+    overflow: "hidden",
   },
+  settingsContent: { padding: 20, gap: 16 },
+
   settingsTitle: {
     color: COLORS.text,
-    fontSize: 15,
-    fontWeight: "bold",
+    fontSize: 16,
     fontFamily: FONT_MONO,
     textAlign: "center",
-    letterSpacing: 1,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   connectRow: { flexDirection: "row", gap: 10 },
   ipInput: {
@@ -1054,111 +1290,116 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 4,
-    fontSize: 13,
     borderWidth: 1,
     borderColor: COLORS.line,
   },
   connectBtn: {
-    backgroundColor: COLORS.green,
-    paddingHorizontal: 20,
+    backgroundColor: COLORS.cyan,
+    paddingHorizontal: 16,
     justifyContent: "center",
     borderRadius: 4,
   },
-  connectBtnText: {
-    color: "#000",
-    fontWeight: "bold",
-    fontFamily: FONT_MONO,
-    fontSize: 13,
-  },
+  connectBtnText: { color: "#000", fontWeight: "bold", fontFamily: FONT_MONO },
   statusText: {
     color: COLORS.textDim,
     fontFamily: FONT_MONO,
-    fontSize: 12,
     textAlign: "center",
+    fontSize: 12,
+    marginTop: -8,
   },
+
   gyroBox: {
     backgroundColor: COLORS.panel2,
     padding: 12,
-    borderRadius: 4,
+    borderRadius: 6,
     gap: 12,
     borderWidth: 1,
     borderColor: COLORS.lineSoft,
   },
   gyroRow: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
+    alignItems: "center",
   },
   gyroLabel: { color: COLORS.text, fontFamily: FONT_MONO, fontSize: 13 },
-  editLayoutBtn: {
-    backgroundColor: "rgba(0,229,255,0.12)",
+
+  editLayoutModalBtn: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "rgba(0,229,255,0.15)",
     borderWidth: 1,
     borderColor: COLORS.cyan,
-    padding: 12,
-    borderRadius: 4,
+    padding: 14,
+    borderRadius: 6,
     alignItems: "center",
+    marginTop: 4,
   },
-  editLayoutBtnText: {
+  editLayoutModalText: {
     color: COLORS.cyan,
-    fontWeight: "bold",
     fontFamily: FONT_MONO,
-    letterSpacing: 0.5,
+    fontWeight: "bold",
   },
   closeSettingsBtn: {
-    backgroundColor: COLORS.panel2,
-    borderWidth: 1,
-    borderColor: COLORS.line,
+    backgroundColor: COLORS.line,
     padding: 12,
-    borderRadius: 4,
+    borderRadius: 6,
     alignItems: "center",
   },
   closeSettingsText: {
     color: COLORS.text,
-    fontWeight: "bold",
     fontFamily: FONT_MONO,
+    fontWeight: "bold",
   },
 
-  // ---- bottom menu ----
-  bottomMenu: {
+  // --- LIBRARY / PIT BOX ---
+  libraryContainer: {
     position: "absolute",
-    bottom: 15,
-    left: 15,
-    flexDirection: "row",
-    gap: 12,
+    bottom: 10,
+    left: 20,
+    right: 20,
+    height: 90,
+    backgroundColor: "rgba(15,15,15,0.9)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.cyan,
+    padding: 8,
     zIndex: 150,
   },
-  actionBtn: {
-    backgroundColor: COLORS.panel2,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: COLORS.line,
-  },
-  actionBtnDone: {
-    borderColor: COLORS.green,
-    backgroundColor: "rgba(23,232,143,0.12)",
-  },
-  actionBtnText: {
-    color: COLORS.text,
-    fontWeight: "bold",
-    fontFamily: FONT_MONO,
-    fontSize: 12,
-  },
-  editHint: {
-    position: "absolute",
-    bottom: 15,
-    right: 15,
-    maxWidth: 220,
-    color: COLORS.amber,
+  libraryTitle: {
+    color: COLORS.cyan,
     fontFamily: FONT_MONO,
     fontSize: 10,
     fontWeight: "bold",
-    zIndex: 150,
-    textAlign: "right",
+    marginBottom: 6,
+    marginLeft: 4,
+  },
+  libraryScroll: { alignItems: "center", paddingHorizontal: 4, gap: 12 },
+  libraryEmpty: {
+    color: COLORS.textDim,
+    fontFamily: FONT_MONO,
+    fontSize: 12,
+    fontStyle: "italic",
+    alignSelf: "center",
+    marginLeft: 10,
+  },
+  pitBoxItem: {
+    width: 50,
+    height: 50,
+    backgroundColor: COLORS.panel2,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  pitBoxItemText: {
+    color: COLORS.text,
+    fontFamily: FONT_MONO,
+    fontSize: 11,
+    fontWeight: "bold",
   },
 
-  // ---- resize / delete handles ----
   resizeHandle: {
     position: "absolute",
     right: 0,
@@ -1175,11 +1416,11 @@ const styles = StyleSheet.create({
   resizeHandleText: { color: "#000", fontWeight: "bold", fontSize: 16 },
   deleteHandle: {
     position: "absolute",
-    left: -10,
-    top: -10,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    left: -12,
+    top: -12,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: COLORS.red,
     justifyContent: "center",
     alignItems: "center",
@@ -1187,15 +1428,8 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: COLORS.bg,
   },
-  deleteHandleText: {
-    color: "#fff",
-    fontWeight: "900",
-    fontSize: 16,
-    lineHeight: 16,
-    marginTop: -1,
-  },
 
-  // ---- face buttons / paddles / triggers ----
+  // --- CONTROLS ---
   faceButton: {
     flex: 1,
     justifyContent: "center",
@@ -1209,7 +1443,7 @@ const styles = StyleSheet.create({
     color: COLORS.textDim,
     fontWeight: "bold",
     fontFamily: FONT_MONO,
-    fontSize: 16,
+    fontSize: 18,
   },
   r2Button: {
     flex: 1,
@@ -1220,27 +1454,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  r2ButtonActive: {
-    backgroundColor: COLORS.red,
-    borderColor: COLORS.red,
-  },
+  r2ButtonActive: { backgroundColor: COLORS.red, borderColor: COLORS.red },
   r2Text: {
     color: COLORS.textDim,
     fontWeight: "bold",
     fontFamily: FONT_MONO,
     fontSize: 20,
   },
-  pedalContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "flex-start",
-  },
+  pedalContainer: { flex: 1, alignItems: "center" },
   pedalLabel: {
     color: COLORS.textDim,
     fontFamily: FONT_MONO,
     fontSize: 11,
-    fontWeight: "bold",
-    letterSpacing: 1,
     marginBottom: 4,
   },
   pedalTrack: {
@@ -1253,7 +1478,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     justifyContent: "flex-end",
   },
-  pedalFill: { width: "100%", backgroundColor: COLORS.green },
+  pedalFill: { width: "100%", backgroundColor: COLORS.cyan },
   pedalPercent: {
     color: COLORS.text,
     fontFamily: FONT_MONO,
@@ -1271,10 +1496,7 @@ const styles = StyleSheet.create({
   },
   paddleLeft: { transform: [{ skewX: "-8deg" }] },
   paddleRight: { transform: [{ skewX: "8deg" }] },
-  paddleShiftActive: {
-    backgroundColor: COLORS.cyan,
-    borderColor: COLORS.cyan,
-  },
+  paddleShiftActive: { backgroundColor: COLORS.cyan, borderColor: COLORS.cyan },
   paddleShiftText: {
     color: COLORS.cyan,
     fontFamily: FONT_MONO,
@@ -1291,10 +1513,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: COLORS.line,
   },
-  drsActive: {
-    backgroundColor: COLORS.green,
-    borderColor: COLORS.green,
-  },
+  drsActive: { backgroundColor: COLORS.green, borderColor: COLORS.green },
   drsText: {
     color: COLORS.textDim,
     fontFamily: FONT_MONO,
@@ -1303,165 +1522,116 @@ const styles = StyleSheet.create({
   },
   drsTextActive: { color: "#000" },
 
-  // ---- center dash (gear · car silhouette · speed) ----
-  centerDash: {
+  mfdContainer: {
     flex: 1,
-    backgroundColor: "#050505",
+    backgroundColor: "#000",
+    borderWidth: 2,
+    borderColor: "#333",
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.lineSoft,
-    padding: 8,
-    justifyContent: "space-between",
+    overflow: "hidden",
   },
-  centerDashMain: {
-    flex: 1,
+  mfdRowTop: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    height: 35,
+    borderBottomWidth: 2,
+    borderColor: "#333",
   },
-  gearSpeedCol: { alignItems: "center", width: 68 },
-  dashMiniLabel: {
-    color: COLORS.textDim,
+  mfdCellTop: { flex: 1, justifyContent: "center", alignItems: "center" },
+  borderSidesRed: {
+    borderLeftWidth: 2,
+    borderRightWidth: 2,
+    borderColor: COLORS.red,
+  },
+  mfdTextTop: { fontFamily: FONT_MONO, fontSize: 18, fontWeight: "bold" },
+  mfdRowMiddle: { flex: 1, flexDirection: "row" },
+  mfdColLeft: { flex: 1, borderRightWidth: 2, borderColor: COLORS.red },
+  mfdColCenter: { flex: 1.5, justifyContent: "center", alignItems: "center" },
+  mfdColRight: { flex: 1, borderLeftWidth: 2, borderColor: COLORS.red },
+  mfdSubCell: { flex: 1, justifyContent: "center", alignItems: "center" },
+  borderTopWhite: { borderTopWidth: 1, borderColor: "#555" },
+  mfdMiniLabel: {
+    color: "#fff",
     fontFamily: FONT_MONO,
     fontSize: 9,
-    letterSpacing: 1.5,
+    position: "absolute",
+    top: 2,
+    left: 4,
+  },
+  mfdWhiteBig: {
+    color: "#fff",
+    fontFamily: FONT_MONO,
+    fontSize: 22,
+    fontWeight: "bold",
+    marginTop: 8,
+  },
+  mfdGearLabel: {
+    color: "#fff",
+    fontFamily: FONT_MONO,
+    fontSize: 12,
+    position: "absolute",
+    top: 5,
+  },
+  mfdGearNumber: {
+    color: "#fff",
+    fontFamily: FONT_MONO,
+    fontSize: 90,
+    fontWeight: "bold",
+    includeFontPadding: false,
+  },
+  mfdTyreGrid: {
+    flex: 1,
+    flexWrap: "wrap",
+    flexDirection: "row",
+    padding: 4,
+    gap: 4,
+    justifyContent: "center",
+    alignContent: "center",
+  },
+  mfdTyreBox: {
+    width: "45%",
+    height: "40%",
+    backgroundColor: COLORS.redDark,
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: 2,
+  },
+  mfdTyreText: {
+    color: "#fff",
+    fontFamily: FONT_MONO,
+    fontSize: 14,
     fontWeight: "bold",
   },
-  gearBig: {
+  mfdRowBottom: {
+    height: 30,
+    borderTopWidth: 2,
+    borderColor: "#333",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    justifyContent: "space-between",
+  },
+  mfdYellowTime: {
     color: COLORS.yellow,
     fontFamily: FONT_MONO,
-    fontSize: 46,
-    fontWeight: "900",
-    includeFontPadding: false,
+    fontSize: 14,
+    fontWeight: "bold",
   },
-  speedBig: {
-    color: COLORS.text,
-    fontFamily: FONT_MONO,
-    fontSize: 34,
-    fontWeight: "900",
-    includeFontPadding: false,
-  },
-
-  carSilhouetteWrap: {
+  mfdBottomBar: {
     flex: 1,
-    height: 100,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    position: "relative",
+    height: 10,
+    backgroundColor: "#222",
+    marginLeft: 15,
+    borderRadius: 2,
+    overflow: "hidden",
   },
-  carBody: {
-    width: 30,
-    height: 86,
-    borderColor: "rgba(255,255,255,0.35)",
+  mfdBarFill: { width: "40%", height: "100%", backgroundColor: COLORS.purple },
+  // --- FLAGS ---
+  flagBox: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: 6,
     borderWidth: 2,
-    borderRadius: 9,
-    alignItems: "center",
-    justifyContent: "center",
-    position: "relative",
   },
-  carNoseShape: {
-    position: "absolute",
-    top: -9,
-    width: 16,
-    height: 13,
-    backgroundColor: "rgba(255,255,255,0.25)",
-    borderTopLeftRadius: 5,
-    borderTopRightRadius: 5,
-  },
-  carCockpitShape: {
-    width: 14,
-    height: 22,
-    backgroundColor: "#101318",
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-  },
-  tireCorner: {
-    width: 11,
-    height: 24,
-    borderRadius: 3,
-    position: "absolute",
-    borderWidth: 1,
-    borderColor: "#000",
-  },
-  tireFL: { left: -2, top: 6 },
-  tireFR: { right: -2, top: 6 },
-  tireRL: { left: -2, bottom: 6 },
-  tireRR: { right: -2, bottom: 6 },
-
-  centerDashStats: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    borderTopWidth: 1,
-    borderColor: COLORS.lineSoft,
-    paddingTop: 6,
-    marginTop: 4,
-  },
-  statCell: { alignItems: "center", flex: 1 },
-  statLabel: {
-    color: COLORS.textDim,
-    fontFamily: FONT_MONO,
-    fontSize: 8,
-    letterSpacing: 1,
-    fontWeight: "bold",
-  },
-  statVal: {
-    color: COLORS.text,
-    fontFamily: FONT_MONO,
-    fontSize: 12,
-    fontWeight: "800",
-    marginTop: 2,
-  },
-
-  // ---- pit box drawer ----
-  pitBox: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: PIT_BOX_HEIGHT,
-    backgroundColor: "rgba(10,10,10,0.96)",
-    borderTopWidth: 2,
-    borderColor: COLORS.cyan,
-    paddingHorizontal: 14,
-    paddingTop: 8,
-    zIndex: 250,
-  },
-  pitBoxTitle: {
-    color: COLORS.cyan,
-    fontFamily: FONT_MONO,
-    fontSize: 11,
-    letterSpacing: 2,
-    fontWeight: "bold",
-    marginBottom: 6,
-  },
-  pitBoxRow: {
-    flex: 1,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    alignItems: "center",
-  },
-  pitBoxEmpty: {
-    color: COLORS.textDim,
-    fontFamily: FONT_MONO,
-    fontSize: 12,
-  },
-  pitBoxItem: {
-    width: 62,
-    height: 62,
-    borderRadius: 10,
-    backgroundColor: COLORS.panel2,
-    borderWidth: 1,
-    borderColor: COLORS.line,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  pitBoxItemText: {
-    color: COLORS.text,
-    fontFamily: FONT_MONO,
-    fontWeight: "bold",
-    fontSize: 12,
-  },
+  flagText: { fontFamily: FONT_MONO, fontWeight: "900", fontSize: 16 },
 });
