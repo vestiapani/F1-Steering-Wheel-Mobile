@@ -478,7 +478,6 @@ const FlagIndicator = ({ flag }) => {
 const MfdDash = ({ telemetry, gearLabel }) => {
   const temps = telemetry.tyreTemp || [0, 0, 0, 0];
 
-  // Menampilkan delta jarak dalam meter (karena F1 2020 tidak punya native time-delta)
   const deltaVal = telemetry.delta != null ? parseFloat(telemetry.delta) : 0;
   const deltaColor =
     deltaVal < 0 ? COLORS.green : deltaVal > 0 ? COLORS.red : COLORS.text;
@@ -490,9 +489,9 @@ const MfdDash = ({ telemetry, gearLabel }) => {
   );
   const rpmDisplay = Math.round(telemetry.rpm || 0).toString();
   const speedDisplay = Math.round(telemetry.speed || 0).toString();
-  const lapDisplay = "5";
+  const lapDisplay = telemetry.lapNum ? telemetry.lapNum.toString() : "-";
+  const bbalDisplay = telemetry.brakeBias ? `${telemetry.brakeBias}%` : "-";
   const sessionTimeDisplay = fmtSessionTime(telemetry.sessionTime);
-
   return (
     <View style={styles.mfdContainer}>
       <View style={styles.mfdRowTop}>
@@ -572,7 +571,7 @@ const MfdDash = ({ telemetry, gearLabel }) => {
             style={[styles.mfdSubCell, styles.borderTopWhite, { flex: 0.5 }]}
           >
             <Text style={styles.mfdMiniLabel}>BBAL</Text>
-            <Text style={styles.mfdWhiteBig}>+1.0</Text>
+            <Text style={styles.mfdWhiteBig}>{bbalDisplay}</Text>
           </View>
         </View>
       </View>
@@ -840,15 +839,23 @@ export default function App() {
     socket.on("telemetry", (data) => {
       setTelemetry((prev) => ({ ...prev, ...data }));
     });
-    socket.on("leaderboard", (rows) => {
+    ssocket.on("leaderboard", (rows) => {
       const me = rows.find((r) => r.isPlayer);
       if (me) {
         setTelemetry((prev) => ({
           ...prev,
           lastLapMs: me.lastLapMs || prev.lastLapMs,
           delta: me.intervalM != null ? me.intervalM : prev.delta,
+          lapNum: me.lapNum,
         }));
       }
+    });
+
+    socket.on("session-info", (data) => {
+      setTelemetry((prev) => ({
+        ...prev,
+        sessionTime: data.timeLeft,
+      }));
     });
     socket.on("flags", (data) => {
       const present = new Set((data.zones || []).map((z) => z.flag));
@@ -858,6 +865,8 @@ export default function App() {
       const yellowCount = (data.zones || []).filter(
         (z) => z.flag === "YELLOW",
       ).length;
+
+
 
       let activeFlag = "NONE";
       if (present.has("RED") || data.trackStatus === "RED") activeFlag = "RED";
