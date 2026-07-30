@@ -233,13 +233,6 @@ const ShiftLight = ({ litDots, totalDots }) => {
   );
 };
 
-const GearSpeed = ({ gearLabel, speed }) => (
-  <View style={styles.telemetryCenter}>
-    <Text style={styles.gearText}>{gearLabel}</Text>
-    <Text style={styles.speedText}>{speed} KM/H</Text>
-  </View>
-);
-
 // --- KOMPONEN BARU UNTUK F1 TELEMETRY ---
 
 const DrsIndicator = ({ active }) => (
@@ -319,8 +312,7 @@ const DashWidget = ({ ersMode, ersEnergy, fuel, delta }) => {
     Math.min(100, Math.max(0, Math.round((ersEnergy / 4000000) * 100))) || 0;
 
   let deltaColor = "#fff";
-  if (delta < 0)
-    deltaColor = "#00e676";
+  if (delta < 0) deltaColor = "#00e676";
   else if (delta > 0) deltaColor = "#ff1744";
   const deltaSec = delta ? parseFloat(delta).toFixed(3) : "0.000";
   const deltaPrefix = delta > 0 ? "+" : "";
@@ -350,6 +342,162 @@ const DashWidget = ({ ersMode, ersEnergy, fuel, delta }) => {
   );
 };
 
+// --- MFD (Multi Function Display) ala setir F1 asli ---
+
+function fmtMfdMs(ms) {
+  if (!ms) return "--:--.---";
+  const m = Math.floor(ms / 60000);
+  const s = ((ms % 60000) / 1000).toFixed(3).padStart(6, "0");
+  return `${m}:${s}`;
+}
+
+const MFD_SEGMENTS = 16;
+
+function MfdShiftBar({ rpm, maxRpm }) {
+  const pct = Math.min(100, ((rpm || 0) / (maxRpm || 1)) * 100);
+  const lit = Math.round((pct / 100) * MFD_SEGMENTS);
+  return (
+    <View style={styles.mfdShiftBar}>
+      {Array.from({ length: MFD_SEGMENTS }).map((_, i) => {
+        let color = "#161616";
+        if (i < lit) {
+          if (i < 5) color = "#29b6f6";
+          else if (i < 11) color = "#00e676";
+          else if (i < 14) color = "#ff1744";
+          else color = "#c86dfd";
+        }
+        return (
+          <View
+            key={i}
+            style={[styles.mfdShiftDot, { backgroundColor: color }]}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
+function MfdCell({ label, value, valueColor = "#fff", size = 14 }) {
+  return (
+    <View style={styles.mfdCell}>
+      {label ? <Text style={styles.mfdCellLabel}>{label}</Text> : null}
+      <Text
+        style={[styles.mfdCellValue, { color: valueColor, fontSize: size }]}
+        numberOfLines={1}
+      >
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+const MFDWidget = ({ telemetry, gearLabel }) => {
+  const deltaVal = telemetry.delta != null ? parseFloat(telemetry.delta) : null;
+  const deltaColor =
+    deltaVal == null
+      ? "#9a9a9a"
+      : deltaVal < 0
+        ? "#00e676"
+        : deltaVal > 0
+          ? "#ff1744"
+          : "#9a9a9a";
+  const deltaStr =
+    deltaVal == null ? "—" : `${deltaVal > 0 ? "+" : ""}${deltaVal.toFixed(2)}`;
+  const ersPct = Math.min(
+    100,
+    Math.max(0, Math.round(((telemetry.ersEnergy || 0) / 4000000) * 100)),
+  );
+
+  return (
+    <View style={styles.mfdContainer}>
+      <MfdShiftBar rpm={telemetry.rpm} maxRpm={telemetry.maxRpm} />
+
+      <View style={styles.mfdGridRow}>
+        <MfdCell
+          label="LAP"
+          value={fmtMfdMs(telemetry.lastLapMs)}
+          valueColor="#00e676"
+          size={12}
+        />
+        <MfdCell
+          label="RPM"
+          value={Math.round(telemetry.rpm || 0)}
+          valueColor="#ff1744"
+          size={15}
+        />
+        <MfdCell
+          label="DELTA"
+          value={deltaStr}
+          valueColor={deltaColor}
+          size={15}
+        />
+      </View>
+
+      <View style={styles.mfdGridRowMain}>
+        <MfdCell
+          label="SPEED"
+          value={Math.round(telemetry.speed || 0)}
+          size={22}
+        />
+        <View style={styles.mfdGearBox}>
+          <Text style={styles.mfdGearLabel}>GEAR</Text>
+          <Text style={styles.mfdGearText}>{gearLabel}</Text>
+        </View>
+        <MfdCell
+          label="BBAL"
+          value={
+            telemetry.brakeBias
+              ? `${telemetry.brakeBias}/${100 - telemetry.brakeBias}`
+              : "—"
+          }
+          size={12}
+        />
+      </View>
+
+      <View style={styles.mfdGridRow}>
+        <MfdCell
+          label="SOC"
+          value={`${ersPct}`}
+          valueColor="#00e676"
+          size={16}
+        />
+        <MfdCell
+          label="FUEL"
+          value={telemetry.fuel != null ? telemetry.fuel.toFixed(1) : "—"}
+          size={13}
+        />
+        <View style={styles.mfdCell}>
+          <View style={styles.mfdStrategyIcon} />
+        </View>
+      </View>
+
+      <View style={styles.mfdBottomStrip}>
+        {Array.from({ length: 14 }).map((_, i) => (
+          <View
+            key={i}
+            style={[
+              styles.mfdStripSeg,
+              { backgroundColor: i % 4 === 0 ? "#c86dfd" : "#5cff5c" },
+            ]}
+          />
+        ))}
+      </View>
+    </View>
+  );
+};
+
+const PaddleShift = ({ label, pressed, side }) => (
+  <View
+    style={[
+      styles.paddleShift,
+      side === "left" ? styles.paddleLeft : styles.paddleRight,
+      { opacity: pressed ? 0.55 : 1 },
+    ]}
+  >
+    <Text style={styles.paddleShiftText}>{label}</Text>
+  </View>
+);
+
 // ---------------------------------------------------------------------------
 // Main App
 // ---------------------------------------------------------------------------
@@ -358,7 +506,8 @@ const MIN_SIZE = {
   button: { w: 40, h: 40 },
   gas: { w: 40, h: 100 },
   shiftlight: { w: 180, h: 20 },
-  gearspeed: { w: 120, h: 100 },
+  mfd: { w: 240, h: 210 },
+  paddle: { w: 90, h: 46 },
   drs: { w: 60, h: 40 },
   tyres: { w: 140, h: 100 }, // Diperbesar untuk menampung desain mobil baru
   dash: { w: 140, h: 70 },
@@ -385,6 +534,8 @@ export default function App() {
     ersEnergy: 0,
     fuel: 0,
     delta: 0,
+    lastLapMs: 0,
+    brakeBias: 0,
   });
 
   const [layout, setLayout] = useState([]);
@@ -457,23 +608,23 @@ export default function App() {
         },
         {
           id: "LB",
-          type: "button",
-          label: "LB",
-          color: "#00e676",
-          x: 40,
-          y: 150,
-          w: 55,
-          h: 55,
+          type: "paddle",
+          label: "－",
+          side: "left",
+          x: 20,
+          y: 20,
+          w: 100,
+          h: 50,
         },
         {
           id: "RB",
-          type: "button",
-          label: "RB",
-          color: "#00e676",
-          x: SCREEN_W - 230,
-          y: 150,
-          w: 55,
-          h: 55,
+          type: "paddle",
+          label: "＋",
+          side: "right",
+          x: SCREEN_W - 120,
+          y: 20,
+          w: 100,
+          h: 50,
         },
         { id: "R2", type: "r2", x: 40, y: SCREEN_H - 220, w: 180, h: 180 },
         {
@@ -485,20 +636,12 @@ export default function App() {
           h: 180,
         },
         {
-          id: "SHIFTLIGHT",
-          type: "shiftlight",
-          x: SCREEN_W / 2 - 130,
-          y: 20,
-          w: 260,
-          h: 30,
-        },
-        {
-          id: "GEARSPEED",
-          type: "gearspeed",
-          x: SCREEN_W / 2 - 100,
-          y: SCREEN_H / 2 - 60,
-          w: 200,
-          h: 160,
+          id: "MFD",
+          type: "mfd",
+          x: SCREEN_W / 2 - 140,
+          y: SCREEN_H / 2 - 110,
+          w: 280,
+          h: 220,
         },
         { id: "DRS", type: "drs", x: SCREEN_W / 2 + 140, y: 20, w: 70, h: 40 },
         {
@@ -622,7 +765,7 @@ export default function App() {
       const it = items[i];
       if (
         it.type === "shiftlight" ||
-        it.type === "gearspeed" ||
+        it.type === "mfd" ||
         it.type === "drs" ||
         it.type === "tyres" ||
         it.type === "dash"
@@ -636,10 +779,10 @@ export default function App() {
 
   const applyPressToItem = (item, active, py) => {
     if (!item) return;
-    if (item.type === "button") {
+    if (item.type === "button" || item.type === "paddle") {
       inputRef.current[item.id] = active;
       setPressedIds((prev) => ({ ...prev, [item.id]: active }));
-      // Getar hanya untuk face button
+      // Getar hanya untuk face button & paddle shift
       if (active) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     } else if (item.type === "r2") {
       inputRef.current.LT = active ? 1 : 0;
@@ -705,8 +848,16 @@ export default function App() {
         return <GasSlider percent={gasPercent} />;
       case "shiftlight":
         return <ShiftLight litDots={litDots} totalDots={totalDots} />;
-      case "gearspeed":
-        return <GearSpeed gearLabel={gearLabel} speed={telemetry.speed} />;
+      case "mfd":
+        return <MFDWidget telemetry={telemetry} gearLabel={gearLabel} />;
+      case "paddle":
+        return (
+          <PaddleShift
+            label={item.label}
+            side={item.side}
+            pressed={!!pressedIds[item.id]}
+          />
+        );
       case "drs":
         return <DrsIndicator active={telemetry.drs === 1} />;
       case "tyres":
@@ -977,21 +1128,6 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   rpmDot: { width: 14, height: 14, borderRadius: 3 },
-  telemetryCenter: { flex: 1, alignItems: "center", justifyContent: "center" },
-  gearText: {
-    fontSize: 90,
-    fontWeight: "900",
-    color: "#ff9800",
-    includeFontPadding: false,
-    textAlign: "center",
-  },
-  speedText: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#00ffcc",
-    marginTop: 2,
-    textAlign: "center",
-  },
 
   drsBox: {
     flex: 1,
@@ -1095,4 +1231,80 @@ const styles = StyleSheet.create({
   tireFR: { right: -14, top: 8 },
   tireRL: { left: -14, bottom: 8 },
   tireRR: { right: -14, bottom: 8 },
+
+  // --- STYLING BARU UNTUK MFD & PADDLE SHIFT ---
+  mfdContainer: {
+    flex: 1,
+    backgroundColor: "#050505",
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+    padding: 6,
+    justifyContent: "space-between",
+  },
+  mfdShiftBar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    height: 10,
+    marginBottom: 5,
+  },
+  mfdShiftDot: { flex: 1, marginHorizontal: 1, borderRadius: 2 },
+  mfdGridRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    borderTopWidth: 1,
+    borderColor: "#1c1c1c",
+    paddingVertical: 3,
+  },
+  mfdGridRowMain: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderTopWidth: 1,
+    borderColor: "#1c1c1c",
+    paddingVertical: 4,
+  },
+  mfdCell: { flex: 1, alignItems: "center" },
+  mfdCellLabel: {
+    color: "#666",
+    fontSize: 8,
+    fontWeight: "bold",
+    letterSpacing: 0.5,
+  },
+  mfdCellValue: { fontWeight: "800" },
+  mfdGearBox: { flex: 1, alignItems: "center" },
+  mfdGearLabel: { color: "#666", fontSize: 8, fontWeight: "bold" },
+  mfdGearText: {
+    color: "#fff",
+    fontSize: 46,
+    fontWeight: "900",
+    includeFontPadding: false,
+  },
+  mfdStrategyIcon: {
+    width: 14,
+    height: 14,
+    borderWidth: 1.5,
+    borderColor: "#888",
+    transform: [{ rotate: "45deg" }],
+  },
+  mfdBottomStrip: {
+    flexDirection: "row",
+    height: 6,
+    marginTop: 4,
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  mfdStripSeg: { flex: 1 },
+  paddleShift: {
+    flex: 1,
+    borderRadius: 10,
+    backgroundColor: "#1b1b1b",
+    borderWidth: 2,
+    borderColor: "#333",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  paddleLeft: { transform: [{ skewX: "-8deg" }] },
+  paddleRight: { transform: [{ skewX: "8deg" }] },
+  paddleShiftText: { color: "#00e5ff", fontSize: 22, fontWeight: "900" },
 });
