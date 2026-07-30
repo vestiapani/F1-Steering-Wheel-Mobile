@@ -741,7 +741,7 @@ export default function App() {
     delta: 0,
     lastLapMs: 0,
   });
-  const [flagState, setFlagState] = useState("NONE");
+  const [flagState, setFlagState] = useState({ active: "NONE", ts: 0 });
   const [layout, setLayout] = useState([]);
   const [pressedIds, setPressedIds] = useState({});
   const [gasPercent, setGasPercent] = useState(0);
@@ -839,7 +839,7 @@ export default function App() {
     socket.on("telemetry", (data) => {
       setTelemetry((prev) => ({ ...prev, ...data }));
     });
-    ssocket.on("leaderboard", (rows) => {
+    socket.on("leaderboard", (rows) => {
       const me = rows.find((r) => r.isPlayer);
       if (me) {
         setTelemetry((prev) => ({
@@ -880,7 +880,7 @@ export default function App() {
       else if (present.has("BLUE")) activeFlag = "BLUE";
       else if (present.has("GREEN")) activeFlag = "GREEN";
 
-      setFlagState(activeFlag);
+      setFlagState({ active: activeFlag, ts: Date.now() });
     });
   };
 
@@ -1052,7 +1052,7 @@ export default function App() {
       case "drs":
         return <DrsIndicator active={telemetry.drs === 1} />;
       case "flag":
-        return <FlagIndicator flag={flagState} />;
+        return <FlagIndicator flag={flagState.active} />;
       default:
         return null;
     }
