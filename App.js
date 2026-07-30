@@ -1,9 +1,10 @@
 import * as Haptics from "expo-haptics";
 import { DeviceMotion } from "expo-sensors";
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
+  Platform,
   useWindowDimensions,
   PanResponder,
   StyleSheet,
@@ -16,7 +17,40 @@ import {
 import { io } from "socket.io-client";
 
 // ---------------------------------------------------------------------------
-// Hook Drag & Resize
+// Tema Dashboard "Pitwall Mobile" — matte black, aksen neon ala setir F1
+// ---------------------------------------------------------------------------
+const COLORS = {
+  bg: "#050505",
+  panel: "#0d0d0d",
+  panel2: "#141414",
+  line: "#232323",
+  lineSoft: "#1a1a1a",
+  text: "#e6e6e6",
+  textDim: "#6b6b6b",
+  green: "#17e88f",
+  yellow: "#f5d90a",
+  red: "#ff2b4d",
+  amber: "#ffb020",
+  cyan: "#00e5ff",
+  blue: "#3d7bfd",
+  purple: "#b34dff",
+};
+
+const FONT_MONO = Platform.select({
+  ios: "Menlo",
+  android: "monospace",
+  default: "monospace",
+});
+
+function fmtMs(ms) {
+  if (!ms) return "—:—.—";
+  const m = Math.floor(ms / 60000);
+  const s = ((ms % 60000) / 1000).toFixed(3).padStart(6, "0");
+  return `${m}:${s}`;
+}
+
+// ---------------------------------------------------------------------------
+// Hook Drag & Resize (tidak berubah dari logika aslinya)
 // ---------------------------------------------------------------------------
 function useDragResizeResponders({
   id,
@@ -94,6 +128,7 @@ function EditableItem({
   minH = 40,
   isEditMode,
   onUpdateLayout,
+  onDelete,
   children,
 }) {
   const pan = useRef(new Animated.ValueXY({ x, y })).current;
@@ -137,14 +172,18 @@ function EditableItem({
         width: sizeAnim.x,
         height: sizeAnim.y,
         borderWidth: isEditMode ? 2 : 0,
-        borderColor: "#00e5ff",
+        borderColor: COLORS.cyan,
         borderStyle: "dashed",
         borderRadius: 8,
         zIndex: isEditMode ? 100 : 10,
       }}
     >
       <View
-        style={{ width: "100%", height: "100%" }}
+        style={{
+          width: "100%",
+          height: "100%",
+          opacity: isEditMode ? 0.7 : 1,
+        }}
         pointerEvents={isEditMode ? "box-only" : "auto"}
         {...(isEditMode ? dragResponder.panHandlers : {})}
       >
@@ -158,27 +197,38 @@ function EditableItem({
           <Text style={styles.resizeHandleText}>⤡</Text>
         </Animated.View>
       )}
+      {isEditMode && (
+        <TouchableOpacity
+          style={styles.deleteHandle}
+          onPress={() => onDelete(id)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Text style={styles.deleteHandleText}>×</Text>
+        </TouchableOpacity>
+      )}
     </Animated.View>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Komponen Visual Murni
+// Komponen Visual — kontrol tepi (SVG-style, presisi, subtle saat idle)
 // ---------------------------------------------------------------------------
 const FaceButton = ({ label, color, pressed }) => (
   <View
     style={[
       styles.faceButton,
-      { backgroundColor: color, opacity: pressed ? 0.6 : 1 },
+      pressed && { backgroundColor: color, borderColor: color },
     ]}
   >
-    <Text style={styles.faceButtonText}>{label}</Text>
+    <Text style={[styles.faceButtonText, pressed && { color: "#000" }]}>
+      {label}
+    </Text>
   </View>
 );
 
 const R2Button = ({ pressed }) => (
-  <View style={[styles.r2Button, { opacity: pressed ? 0.6 : 1 }]}>
-    <Text style={styles.r2Text}>R2</Text>
+  <View style={[styles.r2Button, pressed && styles.r2ButtonActive]}>
+    <Text style={[styles.r2Text, pressed && { color: COLORS.bg }]}>R2</Text>
   </View>
 );
 
@@ -192,48 +242,19 @@ const GasSlider = ({ percent }) => (
   </View>
 );
 
-const ShiftLight = ({ litDots, totalDots }) => {
-  const [blink, setBlink] = useState(true);
-
-  useEffect(() => {
-    // Interval kedipan 75ms (sangat cepat, khas mobil balap)
-    const interval = setInterval(() => setBlink((b) => !b), 75);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Trigger kedip saat nyala 13 lampu atau lebih (mendekati ujung merah / masuk biru)
-  const isRedlining = litDots >= 13;
-  // Jika sedang redline, lampu akan nyala/mati mengikuti state blink
-  const showLights = !isRedlining || blink;
-
-  return (
-    <View style={styles.rpmRow}>
-      {Array.from({ length: totalDots }).map((_, i) => {
-        let color = "#333"; // Warna dasar (mati)
-
-        if (i < litDots) {
-          if (i >= 12)
-            color = "#3d27fd"; // Biru
-          else if (i >= 7)
-            color = "#ff1744"; // Merah
-          else color = "#00e676"; // Hijau
-        }
-
-        // Kalau lagi redlining dan masuk fase kedip "mati", kembalikan warnanya ke #333
-        const finalColor = showLights ? color : "#333";
-
-        return (
-          <View
-            key={i}
-            style={[styles.rpmDot, { backgroundColor: finalColor }]}
-          />
-        );
-      })}
-    </View>
-  );
-};
-
-// --- KOMPONEN BARU UNTUK F1 TELEMETRY ---
+const PaddleShift = ({ label, pressed, side }) => (
+  <View
+    style={[
+      styles.paddleShift,
+      side === "left" ? styles.paddleLeft : styles.paddleRight,
+      pressed && styles.paddleShiftActive,
+    ]}
+  >
+    <Text style={[styles.paddleShiftText, pressed && { color: COLORS.bg }]}>
+      {label}
+    </Text>
+  </View>
+);
 
 const DrsIndicator = ({ active }) => (
   <View style={[styles.drsBox, active && styles.drsActive]}>
@@ -241,166 +262,69 @@ const DrsIndicator = ({ active }) => (
   </View>
 );
 
-// Desain Baru: F1 Car Top-Down Tyres Widget
-const TyresWidget = ({ temps }) => {
-  const fl = temps[2] || 0;
-  const fr = temps[3] || 0;
-  const rl = temps[0] || 0;
-  const rr = temps[1] || 0;
+// ---------------------------------------------------------------------------
+// TOP SHIFT BAR — deretan LED persis di bibir atas layar, kedip saat redline
+// ---------------------------------------------------------------------------
+const TOP_SEGMENTS = 22;
 
-  const getColor = (temp) => {
-    if (temp < 85) return "#29b6f6";
-    if (temp <= 105) return "#00e676";
-    return "#ff1744";
-  };
+const TopShiftBar = ({ litDots }) => {
+  const [blink, setBlink] = useState(true);
 
-  return (
-    <View style={styles.f1CarContainer}>
-      <View style={styles.tempCol}>
-        <Text style={styles.tyreTempText}>{Math.round(fl)}°</Text>
-        <Text style={[styles.tyreTempText, { marginTop: 32 }]}>
-          {Math.round(rl)}°
-        </Text>
-      </View>
+  useEffect(() => {
+    const iv = setInterval(() => setBlink((b) => !b), 75);
+    return () => clearInterval(iv);
+  }, []);
 
-      <View style={styles.carGraphicBody}>
-        <View style={styles.carNose} />
-        <View style={styles.carCockpit} />
-        <View
-          style={[
-            styles.tire,
-            styles.tireFL,
-            { backgroundColor: getColor(fl) },
-          ]}
-        />
-        <View
-          style={[
-            styles.tire,
-            styles.tireFR,
-            { backgroundColor: getColor(fr) },
-          ]}
-        />
-        <View
-          style={[
-            styles.tire,
-            styles.tireRL,
-            { backgroundColor: getColor(rl) },
-          ]}
-        />
-        <View
-          style={[
-            styles.tire,
-            styles.tireRR,
-            { backgroundColor: getColor(rr) },
-          ]}
-        />
-      </View>
-
-      <View style={styles.tempColRight}>
-        <Text style={styles.tyreTempText}>{Math.round(fr)}°</Text>
-        <Text style={[styles.tyreTempText, { marginTop: 32 }]}>
-          {Math.round(rr)}°
-        </Text>
-      </View>
-    </View>
-  );
-};
-
-const DashWidget = ({ ersMode, ersEnergy, fuel, delta }) => {
-  const ersModes = ["NONE", "MED", "HOTLAP", "OVERTAKE"];
-  const ersPct =
-    Math.min(100, Math.max(0, Math.round((ersEnergy / 4000000) * 100))) || 0;
-
-  let deltaColor = "#fff";
-  if (delta < 0) deltaColor = "#00e676";
-  else if (delta > 0) deltaColor = "#ff1744";
-  const deltaSec = delta ? parseFloat(delta).toFixed(3) : "0.000";
-  const deltaPrefix = delta > 0 ? "+" : "";
+  const isRedlining = litDots >= TOP_SEGMENTS - 3;
+  const showLights = !isRedlining || blink;
 
   return (
-    <View style={styles.dashContainer}>
-      <View style={styles.dashRow}>
-        <Text style={styles.dashLabel}>ERS: </Text>
-        <Text style={{ color: "#ffd600", fontSize: 11, fontWeight: "bold" }}>
-          {ersModes[ersMode] || "NONE"} ({ersPct}%)
-        </Text>
-      </View>
-      <View style={styles.dashRow}>
-        <Text style={styles.dashLabel}>FUEL: </Text>
-        <Text style={{ color: "#fff", fontSize: 11, fontWeight: "bold" }}>
-          {(fuel || 0).toFixed(1)} KG
-        </Text>
-      </View>
-      <View style={styles.dashRow}>
-        <Text style={styles.dashLabel}>DELTA: </Text>
-        <Text style={{ color: deltaColor, fontSize: 11, fontWeight: "bold" }}>
-          {deltaPrefix}
-          {deltaSec}
-        </Text>
-      </View>
-    </View>
-  );
-};
-
-// --- MFD (Multi Function Display) ala setir F1 asli ---
-
-function fmtMfdMs(ms) {
-  if (!ms) return "--:--.---";
-  const m = Math.floor(ms / 60000);
-  const s = ((ms % 60000) / 1000).toFixed(3).padStart(6, "0");
-  return `${m}:${s}`;
-}
-
-const MFD_SEGMENTS = 16;
-
-function MfdShiftBar({ rpm, maxRpm }) {
-  const pct = Math.min(100, ((rpm || 0) / (maxRpm || 1)) * 100);
-  const lit = Math.round((pct / 100) * MFD_SEGMENTS);
-  return (
-    <View style={styles.mfdShiftBar}>
-      {Array.from({ length: MFD_SEGMENTS }).map((_, i) => {
-        let color = "#161616";
-        if (i < lit) {
-          if (i < 5) color = "#29b6f6";
-          else if (i < 11) color = "#00e676";
-          else if (i < 14) color = "#ff1744";
-          else color = "#c86dfd";
+    <View style={styles.topShiftBar} pointerEvents="none">
+      {Array.from({ length: TOP_SEGMENTS }).map((_, i) => {
+        let color = "#141414";
+        if (i < litDots) {
+          if (i >= TOP_SEGMENTS - 3) color = COLORS.blue;
+          else if (i >= TOP_SEGMENTS * 0.6) color = COLORS.red;
+          else color = COLORS.green;
         }
+        const finalColor = showLights ? color : "#141414";
         return (
           <View
             key={i}
-            style={[styles.mfdShiftDot, { backgroundColor: color }]}
+            style={[styles.topShiftSeg, { backgroundColor: finalColor }]}
           />
         );
       })}
     </View>
   );
-}
+};
 
-function MfdCell({ label, value, valueColor = "#fff", size = 14 }) {
-  return (
-    <View style={styles.mfdCell}>
-      {label ? <Text style={styles.mfdCellLabel}>{label}</Text> : null}
-      <Text
-        style={[styles.mfdCellValue, { color: valueColor, fontSize: size }]}
-        numberOfLines={1}
-      >
-        {value}
-      </Text>
-    </View>
-  );
-}
+// ---------------------------------------------------------------------------
+// CENTER DASH — jantung MFD: gear (kiri) · siluet F1 + 4 ban (tengah) · speed (kanan)
+// ---------------------------------------------------------------------------
+const tyreTempColor = (t) => {
+  if (!t) return "#1a1f28";
+  if (t < 85) return COLORS.cyan;
+  if (t <= 105) return COLORS.green;
+  return COLORS.red;
+};
 
-const MFDWidget = ({ telemetry, gearLabel }) => {
+const CenterDash = ({ telemetry, gearLabel }) => {
+  const temps = telemetry.tyreTemp || [0, 0, 0, 0];
+  const fl = temps[2] || 0;
+  const fr = temps[3] || 0;
+  const rl = temps[0] || 0;
+  const rr = temps[1] || 0;
+
   const deltaVal = telemetry.delta != null ? parseFloat(telemetry.delta) : null;
   const deltaColor =
     deltaVal == null
-      ? "#9a9a9a"
+      ? COLORS.textDim
       : deltaVal < 0
-        ? "#00e676"
+        ? COLORS.green
         : deltaVal > 0
-          ? "#ff1744"
-          : "#9a9a9a";
+          ? COLORS.red
+          : COLORS.textDim;
   const deltaStr =
     deltaVal == null ? "—" : `${deltaVal > 0 ? "+" : ""}${deltaVal.toFixed(2)}`;
   const ersPct = Math.min(
@@ -409,111 +333,242 @@ const MFDWidget = ({ telemetry, gearLabel }) => {
   );
 
   return (
-    <View style={styles.mfdContainer}>
-      <MfdShiftBar rpm={telemetry.rpm} maxRpm={telemetry.maxRpm} />
-
-      <View style={styles.mfdGridRow}>
-        <MfdCell
-          label="LAP"
-          value={fmtMfdMs(telemetry.lastLapMs)}
-          valueColor="#00e676"
-          size={12}
-        />
-        <MfdCell
-          label="RPM"
-          value={Math.round(telemetry.rpm || 0)}
-          valueColor="#ff1744"
-          size={15}
-        />
-        <MfdCell
-          label="DELTA"
-          value={deltaStr}
-          valueColor={deltaColor}
-          size={15}
-        />
-      </View>
-
-      <View style={styles.mfdGridRowMain}>
-        <MfdCell
-          label="SPEED"
-          value={Math.round(telemetry.speed || 0)}
-          size={22}
-        />
-        <View style={styles.mfdGearBox}>
-          <Text style={styles.mfdGearLabel}>GEAR</Text>
-          <Text style={styles.mfdGearText}>{gearLabel}</Text>
+    <View style={styles.centerDash}>
+      <View style={styles.centerDashMain}>
+        <View style={styles.gearSpeedCol}>
+          <Text style={styles.dashMiniLabel}>GEAR</Text>
+          <Text style={styles.gearBig}>{gearLabel}</Text>
         </View>
-        <MfdCell
-          label="BBAL"
-          value={
-            telemetry.brakeBias
-              ? `${telemetry.brakeBias}/${100 - telemetry.brakeBias}`
-              : "—"
-          }
-          size={12}
-        />
-      </View>
 
-      <View style={styles.mfdGridRow}>
-        <MfdCell
-          label="SOC"
-          value={`${ersPct}`}
-          valueColor="#00e676"
-          size={16}
-        />
-        <MfdCell
-          label="FUEL"
-          value={telemetry.fuel != null ? telemetry.fuel.toFixed(1) : "—"}
-          size={13}
-        />
-        <View style={styles.mfdCell}>
-          <View style={styles.mfdStrategyIcon} />
-        </View>
-      </View>
-
-      <View style={styles.mfdBottomStrip}>
-        {Array.from({ length: 14 }).map((_, i) => (
+        <View style={styles.carSilhouetteWrap}>
           <View
-            key={i}
             style={[
-              styles.mfdStripSeg,
-              { backgroundColor: i % 4 === 0 ? "#c86dfd" : "#5cff5c" },
+              styles.tireCorner,
+              styles.tireFL,
+              { backgroundColor: tyreTempColor(fl) },
             ]}
           />
-        ))}
+          <View
+            style={[
+              styles.tireCorner,
+              styles.tireFR,
+              { backgroundColor: tyreTempColor(fr) },
+            ]}
+          />
+          <View style={styles.carBody}>
+            <View style={styles.carNoseShape} />
+            <View style={styles.carCockpitShape} />
+          </View>
+          <View
+            style={[
+              styles.tireCorner,
+              styles.tireRL,
+              { backgroundColor: tyreTempColor(rl) },
+            ]}
+          />
+          <View
+            style={[
+              styles.tireCorner,
+              styles.tireRR,
+              { backgroundColor: tyreTempColor(rr) },
+            ]}
+          />
+        </View>
+
+        <View style={styles.gearSpeedCol}>
+          <Text style={styles.dashMiniLabel}>KM/H</Text>
+          <Text style={styles.speedBig}>
+            {Math.round(telemetry.speed || 0)}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.centerDashStats}>
+        <View style={styles.statCell}>
+          <Text style={styles.statLabel}>LAP</Text>
+          <Text style={[styles.statVal, { color: COLORS.green }]}>
+            {fmtMs(telemetry.lastLapMs)}
+          </Text>
+        </View>
+        <View style={styles.statCell}>
+          <Text style={styles.statLabel}>DELTA</Text>
+          <Text style={[styles.statVal, { color: deltaColor }]}>
+            {deltaStr}
+          </Text>
+        </View>
+        <View style={styles.statCell}>
+          <Text style={styles.statLabel}>SOC</Text>
+          <Text style={[styles.statVal, { color: COLORS.cyan }]}>
+            {ersPct}%
+          </Text>
+        </View>
+        <View style={styles.statCell}>
+          <Text style={styles.statLabel}>FUEL</Text>
+          <Text style={styles.statVal}>{(telemetry.fuel || 0).toFixed(1)}</Text>
+        </View>
       </View>
     </View>
   );
 };
 
-const PaddleShift = ({ label, pressed, side }) => (
-  <View
-    style={[
-      styles.paddleShift,
-      side === "left" ? styles.paddleLeft : styles.paddleRight,
-      { opacity: pressed ? 0.55 : 1 },
-    ]}
-  >
-    <Text style={styles.paddleShiftText}>{label}</Text>
-  </View>
-);
+// ---------------------------------------------------------------------------
+// PIT BOX — laci komponen yang belum terpakai, drag ke kanvas untuk pasang
+// ---------------------------------------------------------------------------
+const PIT_BOX_HEIGHT = 128;
+
+function PitBoxItem({ item, screenHeight, onDropAdd }) {
+  const pan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const responder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        Animated.spring(scale, {
+          toValue: 1.18,
+          useNativeDriver: false,
+        }).start();
+      },
+      onPanResponderMove: Animated.event([null, { dx: pan.x, dy: pan.y }], {
+        useNativeDriver: false,
+      }),
+      onPanResponderRelease: (evt, gesture) => {
+        Animated.spring(scale, { toValue: 1, useNativeDriver: false }).start();
+        const droppedAbovePitBox =
+          gesture.moveY < screenHeight - PIT_BOX_HEIGHT;
+        if (droppedAbovePitBox && gesture.moveY > 0) {
+          onDropAdd(item, gesture.moveX, gesture.moveY);
+        }
+        Animated.spring(pan, {
+          toValue: { x: 0, y: 0 },
+          useNativeDriver: false,
+        }).start();
+      },
+    }),
+  ).current;
+
+  return (
+    <Animated.View
+      {...responder.panHandlers}
+      style={[
+        styles.pitBoxItem,
+        {
+          transform: [{ translateX: pan.x }, { translateY: pan.y }, { scale }],
+        },
+      ]}
+    >
+      <Text style={styles.pitBoxItemText}>{item.label}</Text>
+    </Animated.View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Katalog default semua komponen yang bisa berada di kanvas
+// ---------------------------------------------------------------------------
+const MIN_SIZE = {
+  button: { w: 40, h: 40 },
+  gas: { w: 40, h: 100 },
+  centerdash: { w: 220, h: 150 },
+  paddle: { w: 90, h: 46 },
+  drs: { w: 60, h: 40 },
+  default: { w: 60, h: 30 },
+};
+
+function buildDefaultItems(SCREEN_W, SCREEN_H) {
+  return [
+    {
+      id: "X",
+      type: "button",
+      label: "X",
+      color: COLORS.cyan,
+      x: SCREEN_W - 230,
+      y: 40,
+      w: 65,
+      h: 65,
+    },
+    {
+      id: "Y",
+      type: "button",
+      label: "Y",
+      color: COLORS.yellow,
+      x: SCREEN_W - 150,
+      y: 220,
+      w: 55,
+      h: 55,
+    },
+    {
+      id: "A",
+      type: "button",
+      label: "A",
+      color: COLORS.green,
+      x: SCREEN_W - 90,
+      y: 90,
+      w: 60,
+      h: 60,
+    },
+    {
+      id: "B",
+      type: "button",
+      label: "B",
+      color: COLORS.red,
+      x: SCREEN_W - 60,
+      y: 180,
+      w: 60,
+      h: 60,
+    },
+    {
+      id: "LB",
+      type: "paddle",
+      label: "－",
+      side: "left",
+      x: 20,
+      y: 26,
+      w: 100,
+      h: 50,
+    },
+    {
+      id: "RB",
+      type: "paddle",
+      label: "＋",
+      side: "right",
+      x: SCREEN_W - 120,
+      y: 26,
+      w: 100,
+      h: 50,
+    },
+    { id: "R2", type: "r2", x: 40, y: SCREEN_H - 220, w: 180, h: 180 },
+    {
+      id: "GAS",
+      type: "gas",
+      x: SCREEN_W - 100,
+      y: SCREEN_H / 2 - 100,
+      w: 60,
+      h: 180,
+    },
+    {
+      id: "DASH",
+      type: "centerdash",
+      label: "MFD",
+      x: SCREEN_W / 2 - 150,
+      y: SCREEN_H / 2 - 100,
+      w: 300,
+      h: 190,
+    },
+    {
+      id: "DRS",
+      type: "drs",
+      label: "DRS",
+      x: SCREEN_W / 2 + 160,
+      y: 30,
+      w: 70,
+      h: 40,
+    },
+  ];
+}
 
 // ---------------------------------------------------------------------------
 // Main App
 // ---------------------------------------------------------------------------
-
-const MIN_SIZE = {
-  button: { w: 40, h: 40 },
-  gas: { w: 40, h: 100 },
-  shiftlight: { w: 180, h: 20 },
-  mfd: { w: 240, h: 210 },
-  paddle: { w: 90, h: 46 },
-  drs: { w: 60, h: 40 },
-  tyres: { w: 140, h: 100 }, // Diperbesar untuk menampung desain mobil baru
-  dash: { w: 140, h: 70 },
-  default: { w: 60, h: 30 },
-};
-
 export default function App() {
   const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
   const [serverIp, setServerIp] = useState("127.0.0.1:3000");
@@ -565,102 +620,7 @@ export default function App() {
 
   useEffect(() => {
     if (layout.length === 0 && SCREEN_W > 0) {
-      setLayout([
-        {
-          id: "X",
-          type: "button",
-          label: "X",
-          color: "#29b6f6",
-          x: SCREEN_W - 230,
-          y: 40,
-          w: 65,
-          h: 65,
-        },
-        {
-          id: "Y",
-          type: "button",
-          label: "Y",
-          color: "#ffd600",
-          x: SCREEN_W - 150,
-          y: 220,
-          w: 55,
-          h: 55,
-        },
-        {
-          id: "A",
-          type: "button",
-          label: "A",
-          color: "#66bb6a",
-          x: SCREEN_W - 90,
-          y: 90,
-          w: 60,
-          h: 60,
-        },
-        {
-          id: "B",
-          type: "button",
-          label: "B",
-          color: "#ef5350",
-          x: SCREEN_W - 60,
-          y: 180,
-          w: 60,
-          h: 60,
-        },
-        {
-          id: "LB",
-          type: "paddle",
-          label: "－",
-          side: "left",
-          x: 20,
-          y: 20,
-          w: 100,
-          h: 50,
-        },
-        {
-          id: "RB",
-          type: "paddle",
-          label: "＋",
-          side: "right",
-          x: SCREEN_W - 120,
-          y: 20,
-          w: 100,
-          h: 50,
-        },
-        { id: "R2", type: "r2", x: 40, y: SCREEN_H - 220, w: 180, h: 180 },
-        {
-          id: "GAS",
-          type: "gas",
-          x: SCREEN_W - 100,
-          y: SCREEN_H / 2 - 100,
-          w: 60,
-          h: 180,
-        },
-        {
-          id: "MFD",
-          type: "mfd",
-          x: SCREEN_W / 2 - 140,
-          y: SCREEN_H / 2 - 110,
-          w: 280,
-          h: 220,
-        },
-        { id: "DRS", type: "drs", x: SCREEN_W / 2 + 140, y: 20, w: 70, h: 40 },
-        {
-          id: "TYRES",
-          type: "tyres",
-          x: SCREEN_W / 2 + 120,
-          y: 70,
-          w: 140,
-          h: 110,
-        },
-        {
-          id: "DASH",
-          type: "dash",
-          x: SCREEN_W / 2 - 250,
-          y: 20,
-          w: 150,
-          h: 70,
-        },
-      ]);
+      setLayout(buildDefaultItems(SCREEN_W, SCREEN_H));
     }
   }, [SCREEN_W, SCREEN_H]);
 
@@ -676,6 +636,15 @@ export default function App() {
   useEffect(() => {
     showSettingsRef.current = showSettings;
   }, [showSettings]);
+
+  // Katalog referensi lengkap (posisi default) untuk mengisi Pit Box
+  const catalog = useMemo(
+    () => (SCREEN_W > 0 ? buildDefaultItems(SCREEN_W, SCREEN_H) : []),
+    [SCREEN_W, SCREEN_H],
+  );
+  const availableInPitBox = catalog.filter(
+    (c) => !layout.some((l) => l.id === c.id),
+  );
 
   const connect = () => {
     if (socketRef.current) socketRef.current.disconnect();
@@ -727,6 +696,24 @@ export default function App() {
     );
   };
 
+  const removeItem = (id) => {
+    setLayout((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const addItemFromCatalog = (catalogItem, dropX, dropY) => {
+    setLayout((prev) => {
+      if (prev.some((i) => i.id === catalogItem.id)) return prev;
+      return [
+        ...prev,
+        {
+          ...catalogItem,
+          x: Math.max(0, dropX - catalogItem.w / 2),
+          y: Math.max(0, dropY - catalogItem.h / 2),
+        },
+      ];
+    });
+  };
+
   useEffect(() => {
     if (!gyroEnabled) {
       gyroSubscription.current?.remove();
@@ -754,8 +741,7 @@ export default function App() {
   }, [gyroEnabled]);
 
   const rpmPercentage = Math.min((telemetry.rpm / telemetry.maxRpm) * 100, 100);
-  const totalDots = 15;
-  const litDots = Math.round((rpmPercentage / 100) * totalDots);
+  const topLitDots = Math.round((rpmPercentage / 100) * TOP_SEGMENTS);
   const gearLabel =
     telemetry.gear === -1 ? "R" : telemetry.gear === 0 ? "N" : telemetry.gear;
 
@@ -763,14 +749,7 @@ export default function App() {
     const items = layoutRef.current;
     for (let i = items.length - 1; i >= 0; i--) {
       const it = items[i];
-      if (
-        it.type === "shiftlight" ||
-        it.type === "mfd" ||
-        it.type === "drs" ||
-        it.type === "tyres" ||
-        it.type === "dash"
-      )
-        continue;
+      if (it.type === "centerdash" || it.type === "drs") continue;
       if (px >= it.x && px <= it.x + it.w && py >= it.y && py <= it.y + it.h)
         return it;
     }
@@ -782,12 +761,10 @@ export default function App() {
     if (item.type === "button" || item.type === "paddle") {
       inputRef.current[item.id] = active;
       setPressedIds((prev) => ({ ...prev, [item.id]: active }));
-      // Getar hanya untuk face button & paddle shift
       if (active) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     } else if (item.type === "r2") {
       inputRef.current.LT = active ? 1 : 0;
       setPressedIds((prev) => ({ ...prev, [item.id]: active }));
-      // Getar dimatikan di trigger agar CPU gak lag
     } else if (item.type === "gas") {
       const value = active
         ? Math.max(0, Math.min(1, 1 - (py - item.y) / item.h))
@@ -846,10 +823,6 @@ export default function App() {
         return <R2Button pressed={!!pressedIds[item.id]} />;
       case "gas":
         return <GasSlider percent={gasPercent} />;
-      case "shiftlight":
-        return <ShiftLight litDots={litDots} totalDots={totalDots} />;
-      case "mfd":
-        return <MFDWidget telemetry={telemetry} gearLabel={gearLabel} />;
       case "paddle":
         return (
           <PaddleShift
@@ -860,17 +833,8 @@ export default function App() {
         );
       case "drs":
         return <DrsIndicator active={telemetry.drs === 1} />;
-      case "tyres":
-        return <TyresWidget temps={telemetry.tyreTemp} />;
-      case "dash":
-        return (
-          <DashWidget
-            ersMode={telemetry.ersMode}
-            ersEnergy={telemetry.ersEnergy}
-            fuel={telemetry.fuel}
-            delta={telemetry.delta}
-          />
-        );
+      case "centerdash":
+        return <CenterDash telemetry={telemetry} gearLabel={gearLabel} />;
       default:
         return null;
     }
@@ -886,6 +850,12 @@ export default function App() {
     >
       <StatusBar hidden />
 
+      <TopShiftBar litDots={topLitDots} />
+
+      {isEditMode && (
+        <View style={styles.editDimOverlay} pointerEvents="none" />
+      )}
+
       {layout.map((item) => (
         <EditableItem
           key={item.id}
@@ -893,6 +863,7 @@ export default function App() {
           {...(MIN_SIZE[item.type] ?? MIN_SIZE.default)}
           isEditMode={isEditMode}
           onUpdateLayout={updateItemLayout}
+          onDelete={removeItem}
         >
           {renderContent(item)}
         </EditableItem>
@@ -902,7 +873,7 @@ export default function App() {
         <View style={styles.settingsOverlay}>
           <View style={styles.settingsBox}>
             <Text style={styles.settingsTitle}>
-              Pengaturan Koneksi & Sensor
+              Pengaturan Koneksi &amp; Sensor
             </Text>
 
             <View style={styles.connectRow}>
@@ -911,7 +882,7 @@ export default function App() {
                 value={serverIp}
                 onChangeText={setServerIp}
                 placeholder="IP:PORT laptop, mis. 127.0.0.1:3000"
-                placeholderTextColor="#777"
+                placeholderTextColor={COLORS.textDim}
                 editable={!isConnected}
               />
               <TouchableOpacity style={styles.connectBtn} onPress={connect}>
@@ -930,7 +901,7 @@ export default function App() {
                 <Switch
                   value={gyroEnabled}
                   onValueChange={setGyroEnabled}
-                  trackColor={{ false: "#333", true: "#00e676" }}
+                  trackColor={{ false: COLORS.line, true: COLORS.green }}
                   thumbColor="#fff"
                 />
               </View>
@@ -939,11 +910,21 @@ export default function App() {
                 <Switch
                   value={gyroInverted}
                   onValueChange={setGyroInverted}
-                  trackColor={{ false: "#333", true: "#ff9800" }}
+                  trackColor={{ false: COLORS.line, true: COLORS.amber }}
                   thumbColor="#fff"
                 />
               </View>
             </View>
+
+            <TouchableOpacity
+              style={styles.editLayoutBtn}
+              onPress={() => {
+                setShowSettings(false);
+                setIsEditMode(true);
+              }}
+            >
+              <Text style={styles.editLayoutBtnText}>✏️ Ubah Layout</Text>
+            </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.closeSettingsBtn}
@@ -955,108 +936,189 @@ export default function App() {
         </View>
       )}
 
-      <View style={styles.bottomMenu}>
-        <TouchableOpacity
-          style={styles.actionBtn}
-          onPress={() => {
-            setShowSettings(true);
-            setIsEditMode(false);
-          }}
-        >
-          <Text style={styles.actionBtnText}>⚙️ Pengaturan</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.actionBtn,
-            { backgroundColor: isEditMode ? "#ff9800" : "#424242" },
-          ]}
-          onPress={() => {
-            setIsEditMode(!isEditMode);
-            setShowSettings(false);
-          }}
-        >
-          <Text style={styles.actionBtnText}>
-            {isEditMode ? "💾 Simpan Layout" : "✏️ Edit Layout"}
-          </Text>
-        </TouchableOpacity>
-      </View>
+      {!isEditMode && !showSettings && (
+        <View style={styles.bottomMenu}>
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => setShowSettings(true)}
+          >
+            <Text style={styles.actionBtnText}>⚙️ Pengaturan</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {isEditMode && (
-        <Text style={styles.editHint}>
-          Mode Edit Aktif: Geser elemen untuk memindah posisi. Geser ujung ⤡
-          untuk ubah ukuran.
-        </Text>
+        <>
+          <View style={styles.bottomMenu}>
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.actionBtnDone]}
+              onPress={() => setIsEditMode(false)}
+            >
+              <Text style={styles.actionBtnText}>✓ Selesai Edit</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.editHint}>
+            Geser komponen untuk memindah. Tarik ⤡ untuk ubah ukuran. Tekan ×
+            untuk melepas ke Pit Box.
+          </Text>
+
+          <View style={styles.pitBox}>
+            <Text style={styles.pitBoxTitle}>PIT BOX</Text>
+            <View style={styles.pitBoxRow}>
+              {availableInPitBox.length === 0 ? (
+                <Text style={styles.pitBoxEmpty}>Semua komponen aktif</Text>
+              ) : (
+                availableInPitBox.map((item) => (
+                  <PitBoxItem
+                    key={item.id}
+                    item={item}
+                    screenHeight={SCREEN_H}
+                    onDropAdd={addItemFromCatalog}
+                  />
+                ))
+              )}
+            </View>
+          </View>
+        </>
       )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0d0d0d" },
+  container: { flex: 1, backgroundColor: COLORS.bg },
+
+  // ---- top shift bar ----
+  topShiftBar: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 14,
+    flexDirection: "row",
+    gap: 2,
+    paddingHorizontal: 2,
+    zIndex: 300,
+    backgroundColor: "#000",
+  },
+  topShiftSeg: { flex: 1, marginVertical: 2, borderRadius: 1 },
+
+  editDimOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    zIndex: 5,
+  },
+
+  // ---- settings ----
   settingsOverlay: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: "rgba(0,0,0,0.82)",
     justifyContent: "center",
     alignItems: "center",
     zIndex: 200,
   },
   settingsBox: {
-    backgroundColor: "#1b1b1b",
+    backgroundColor: COLORS.panel,
     padding: 24,
-    borderRadius: 16,
+    borderRadius: 10,
     width: 400,
     maxWidth: "90%",
     gap: 16,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: COLORS.line,
   },
   settingsTitle: {
-    color: "#fff",
-    fontSize: 16,
+    color: COLORS.text,
+    fontSize: 15,
     fontWeight: "bold",
+    fontFamily: FONT_MONO,
     textAlign: "center",
+    letterSpacing: 1,
     marginBottom: 8,
   },
   connectRow: { flexDirection: "row", gap: 10 },
   ipInput: {
     flex: 1,
-    backgroundColor: "#0d0d0d",
-    color: "#fff",
+    backgroundColor: COLORS.bg,
+    color: COLORS.text,
+    fontFamily: FONT_MONO,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 8,
-    fontSize: 14,
+    borderRadius: 4,
+    fontSize: 13,
     borderWidth: 1,
-    borderColor: "#444",
+    borderColor: COLORS.line,
   },
   connectBtn: {
-    backgroundColor: "#00e676",
+    backgroundColor: COLORS.green,
     paddingHorizontal: 20,
     justifyContent: "center",
-    borderRadius: 8,
+    borderRadius: 4,
   },
-  connectBtnText: { color: "#000", fontWeight: "bold", fontSize: 14 },
-  statusText: { color: "#aaa", fontSize: 13, textAlign: "center" },
-  gyroBox: { backgroundColor: "#222", padding: 12, borderRadius: 8, gap: 12 },
+  connectBtnText: {
+    color: "#000",
+    fontWeight: "bold",
+    fontFamily: FONT_MONO,
+    fontSize: 13,
+  },
+  statusText: {
+    color: COLORS.textDim,
+    fontFamily: FONT_MONO,
+    fontSize: 12,
+    textAlign: "center",
+  },
+  gyroBox: {
+    backgroundColor: COLORS.panel2,
+    padding: 12,
+    borderRadius: 4,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: COLORS.lineSoft,
+  },
   gyroRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-  gyroLabel: { color: "#fff", fontSize: 14 },
-  closeSettingsBtn: {
-    backgroundColor: "#424242",
+  gyroLabel: { color: COLORS.text, fontFamily: FONT_MONO, fontSize: 13 },
+  editLayoutBtn: {
+    backgroundColor: "rgba(0,229,255,0.12)",
+    borderWidth: 1,
+    borderColor: COLORS.cyan,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 4,
     alignItems: "center",
-    marginTop: 8,
   },
-  closeSettingsText: { color: "#fff", fontWeight: "bold" },
+  editLayoutBtnText: {
+    color: COLORS.cyan,
+    fontWeight: "bold",
+    fontFamily: FONT_MONO,
+    letterSpacing: 0.5,
+  },
+  closeSettingsBtn: {
+    backgroundColor: COLORS.panel2,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    padding: 12,
+    borderRadius: 4,
+    alignItems: "center",
+  },
+  closeSettingsText: {
+    color: COLORS.text,
+    fontWeight: "bold",
+    fontFamily: FONT_MONO,
+  },
+
+  // ---- bottom menu ----
   bottomMenu: {
     position: "absolute",
     bottom: 15,
@@ -1066,103 +1128,44 @@ const styles = StyleSheet.create({
     zIndex: 150,
   },
   actionBtn: {
-    backgroundColor: "#424242",
+    backgroundColor: COLORS.panel2,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: 4,
     borderWidth: 1,
-    borderColor: "#555",
+    borderColor: COLORS.line,
   },
-  actionBtnText: { color: "#fff", fontWeight: "bold", fontSize: 13 },
+  actionBtnDone: {
+    borderColor: COLORS.green,
+    backgroundColor: "rgba(23,232,143,0.12)",
+  },
+  actionBtnText: {
+    color: COLORS.text,
+    fontWeight: "bold",
+    fontFamily: FONT_MONO,
+    fontSize: 12,
+  },
   editHint: {
     position: "absolute",
     bottom: 15,
     right: 15,
-    color: "#ff9800",
-    fontSize: 12,
+    maxWidth: 220,
+    color: COLORS.amber,
+    fontFamily: FONT_MONO,
+    fontSize: 10,
     fontWeight: "bold",
-    zIndex: 100,
+    zIndex: 150,
+    textAlign: "right",
   },
-  faceButton: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    borderRadius: 999,
-    elevation: 5,
-  },
-  faceButtonText: { color: "#000", fontWeight: "bold", fontSize: 16 },
-  r2Button: {
-    flex: 1,
-    borderRadius: 999,
-    backgroundColor: "#1b1b1b",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  r2Text: { color: "#666", fontWeight: "bold", fontSize: 20 },
-  pedalContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "flex-start",
-  },
-  pedalLabel: {
-    color: "#aaa",
-    fontSize: 12,
-    fontWeight: "bold",
-    marginBottom: 4,
-  },
-  pedalTrack: {
-    flex: 1,
-    width: 40,
-    backgroundColor: "#222",
-    borderRadius: 10,
-    overflow: "hidden",
-    justifyContent: "flex-end",
-  },
-  pedalFill: { width: "100%", backgroundColor: "#00e676" },
-  pedalPercent: { color: "#fff", fontSize: 12, marginTop: 4 },
-  rpmRow: {
-    flex: 1,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 4,
-  },
-  rpmDot: { width: 14, height: 14, borderRadius: 3 },
 
-  drsBox: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#1b1b1b",
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: "#333",
-  },
-  drsActive: {
-    backgroundColor: "#00e676",
-    borderColor: "#00e676",
-    elevation: 10,
-  },
-  drsText: { color: "#555", fontWeight: "900", fontSize: 20 },
-  drsTextActive: { color: "#000" },
-
-  dashContainer: {
-    flex: 1,
-    backgroundColor: "#1b1b1b",
-    borderRadius: 8,
-    padding: 8,
-    justifyContent: "space-evenly",
-  },
-  dashRow: { flexDirection: "row", alignItems: "center" },
-  dashLabel: { color: "#aaa", fontSize: 11, fontWeight: "bold" },
-
+  // ---- resize / delete handles ----
   resizeHandle: {
     position: "absolute",
     right: 0,
     bottom: 0,
     width: 34,
     height: 34,
-    backgroundColor: "#00e5ff",
+    backgroundColor: COLORS.cyan,
     borderTopLeftRadius: 16,
     borderBottomRightRadius: 6,
     justifyContent: "center",
@@ -1170,141 +1173,295 @@ const styles = StyleSheet.create({
     zIndex: 40,
   },
   resizeHandleText: { color: "#000", fontWeight: "bold", fontSize: 16 },
-
-  // --- STYLING BARU UNTUK GRAFIK MOBIL F1 & BAN ---
-  f1CarContainer: {
-    flex: 1,
-    flexDirection: "row",
+  deleteHandle: {
+    position: "absolute",
+    left: -10,
+    top: -10,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: COLORS.red,
+    justifyContent: "center",
     alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#1b1b1b",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#333",
-    paddingHorizontal: 10,
-  },
-  tempCol: {
-    alignItems: "flex-end",
-    paddingRight: 10,
-    justifyContent: "center",
-  },
-  tempColRight: {
-    alignItems: "flex-start",
-    paddingLeft: 10,
-    justifyContent: "center",
-  },
-  tyreTempText: { color: "#fff", fontSize: 12, fontWeight: "bold" },
-  carGraphicBody: {
-    width: 28,
-    height: 80,
-    borderColor: "#555",
+    zIndex: 41,
     borderWidth: 2,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-    position: "relative",
+    borderColor: COLORS.bg,
   },
-  carNose: {
-    position: "absolute",
-    top: -8,
-    width: 16,
-    height: 12,
-    backgroundColor: "#555",
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 4,
-  },
-  carCockpit: {
-    width: 14,
-    height: 20,
-    backgroundColor: "#222",
-    borderRadius: 4,
-  },
-  tire: {
-    width: 10,
-    height: 22,
-    borderRadius: 3,
-    position: "absolute",
-    borderWidth: 1,
-    borderColor: "#000",
-  },
-  tireFL: { left: -14, top: 8 },
-  tireFR: { right: -14, top: 8 },
-  tireRL: { left: -14, bottom: 8 },
-  tireRR: { right: -14, bottom: 8 },
-
-  // --- STYLING BARU UNTUK MFD & PADDLE SHIFT ---
-  mfdContainer: {
-    flex: 1,
-    backgroundColor: "#050505",
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "#2a2a2a",
-    padding: 6,
-    justifyContent: "space-between",
-  },
-  mfdShiftBar: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    height: 10,
-    marginBottom: 5,
-  },
-  mfdShiftDot: { flex: 1, marginHorizontal: 1, borderRadius: 2 },
-  mfdGridRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    borderTopWidth: 1,
-    borderColor: "#1c1c1c",
-    paddingVertical: 3,
-  },
-  mfdGridRowMain: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderTopWidth: 1,
-    borderColor: "#1c1c1c",
-    paddingVertical: 4,
-  },
-  mfdCell: { flex: 1, alignItems: "center" },
-  mfdCellLabel: {
-    color: "#666",
-    fontSize: 8,
-    fontWeight: "bold",
-    letterSpacing: 0.5,
-  },
-  mfdCellValue: { fontWeight: "800" },
-  mfdGearBox: { flex: 1, alignItems: "center" },
-  mfdGearLabel: { color: "#666", fontSize: 8, fontWeight: "bold" },
-  mfdGearText: {
+  deleteHandleText: {
     color: "#fff",
-    fontSize: 46,
     fontWeight: "900",
-    includeFontPadding: false,
+    fontSize: 16,
+    lineHeight: 16,
+    marginTop: -1,
   },
-  mfdStrategyIcon: {
-    width: 14,
-    height: 14,
-    borderWidth: 1.5,
-    borderColor: "#888",
-    transform: [{ rotate: "45deg" }],
+
+  // ---- face buttons / paddles / triggers ----
+  faceButton: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(255,255,255,0.03)",
   },
-  mfdBottomStrip: {
-    flexDirection: "row",
-    height: 6,
-    marginTop: 4,
-    borderRadius: 2,
+  faceButtonText: {
+    color: COLORS.textDim,
+    fontWeight: "bold",
+    fontFamily: FONT_MONO,
+    fontSize: 16,
+  },
+  r2Button: {
+    flex: 1,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.14)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  r2ButtonActive: {
+    backgroundColor: COLORS.red,
+    borderColor: COLORS.red,
+  },
+  r2Text: {
+    color: COLORS.textDim,
+    fontWeight: "bold",
+    fontFamily: FONT_MONO,
+    fontSize: 20,
+  },
+  pedalContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "flex-start",
+  },
+  pedalLabel: {
+    color: COLORS.textDim,
+    fontFamily: FONT_MONO,
+    fontSize: 11,
+    fontWeight: "bold",
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  pedalTrack: {
+    flex: 1,
+    width: 36,
+    backgroundColor: COLORS.panel2,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.line,
     overflow: "hidden",
+    justifyContent: "flex-end",
   },
-  mfdStripSeg: { flex: 1 },
+  pedalFill: { width: "100%", backgroundColor: COLORS.green },
+  pedalPercent: {
+    color: COLORS.text,
+    fontFamily: FONT_MONO,
+    fontSize: 11,
+    marginTop: 4,
+  },
   paddleShift: {
     flex: 1,
-    borderRadius: 10,
-    backgroundColor: "#1b1b1b",
+    borderRadius: 8,
+    backgroundColor: "rgba(255,255,255,0.03)",
     borderWidth: 2,
-    borderColor: "#333",
+    borderColor: "rgba(255,255,255,0.14)",
     justifyContent: "center",
     alignItems: "center",
   },
   paddleLeft: { transform: [{ skewX: "-8deg" }] },
   paddleRight: { transform: [{ skewX: "8deg" }] },
-  paddleShiftText: { color: "#00e5ff", fontSize: 22, fontWeight: "900" },
+  paddleShiftActive: {
+    backgroundColor: COLORS.cyan,
+    borderColor: COLORS.cyan,
+  },
+  paddleShiftText: {
+    color: COLORS.cyan,
+    fontFamily: FONT_MONO,
+    fontSize: 20,
+    fontWeight: "900",
+  },
+
+  drsBox: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: COLORS.panel2,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: COLORS.line,
+  },
+  drsActive: {
+    backgroundColor: COLORS.green,
+    borderColor: COLORS.green,
+  },
+  drsText: {
+    color: COLORS.textDim,
+    fontFamily: FONT_MONO,
+    fontWeight: "900",
+    fontSize: 17,
+  },
+  drsTextActive: { color: "#000" },
+
+  // ---- center dash (gear · car silhouette · speed) ----
+  centerDash: {
+    flex: 1,
+    backgroundColor: "#050505",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.lineSoft,
+    padding: 8,
+    justifyContent: "space-between",
+  },
+  centerDashMain: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  gearSpeedCol: { alignItems: "center", width: 68 },
+  dashMiniLabel: {
+    color: COLORS.textDim,
+    fontFamily: FONT_MONO,
+    fontSize: 9,
+    letterSpacing: 1.5,
+    fontWeight: "bold",
+  },
+  gearBig: {
+    color: COLORS.yellow,
+    fontFamily: FONT_MONO,
+    fontSize: 46,
+    fontWeight: "900",
+    includeFontPadding: false,
+  },
+  speedBig: {
+    color: COLORS.text,
+    fontFamily: FONT_MONO,
+    fontSize: 34,
+    fontWeight: "900",
+    includeFontPadding: false,
+  },
+
+  carSilhouetteWrap: {
+    flex: 1,
+    height: 100,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  carBody: {
+    width: 30,
+    height: 86,
+    borderColor: "rgba(255,255,255,0.35)",
+    borderWidth: 2,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  carNoseShape: {
+    position: "absolute",
+    top: -9,
+    width: 16,
+    height: 13,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    borderTopLeftRadius: 5,
+    borderTopRightRadius: 5,
+  },
+  carCockpitShape: {
+    width: 14,
+    height: 22,
+    backgroundColor: "#101318",
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+  },
+  tireCorner: {
+    width: 11,
+    height: 24,
+    borderRadius: 3,
+    position: "absolute",
+    borderWidth: 1,
+    borderColor: "#000",
+  },
+  tireFL: { left: -2, top: 6 },
+  tireFR: { right: -2, top: 6 },
+  tireRL: { left: -2, bottom: 6 },
+  tireRR: { right: -2, bottom: 6 },
+
+  centerDashStats: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    borderTopWidth: 1,
+    borderColor: COLORS.lineSoft,
+    paddingTop: 6,
+    marginTop: 4,
+  },
+  statCell: { alignItems: "center", flex: 1 },
+  statLabel: {
+    color: COLORS.textDim,
+    fontFamily: FONT_MONO,
+    fontSize: 8,
+    letterSpacing: 1,
+    fontWeight: "bold",
+  },
+  statVal: {
+    color: COLORS.text,
+    fontFamily: FONT_MONO,
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: 2,
+  },
+
+  // ---- pit box drawer ----
+  pitBox: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: PIT_BOX_HEIGHT,
+    backgroundColor: "rgba(10,10,10,0.96)",
+    borderTopWidth: 2,
+    borderColor: COLORS.cyan,
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    zIndex: 250,
+  },
+  pitBoxTitle: {
+    color: COLORS.cyan,
+    fontFamily: FONT_MONO,
+    fontSize: 11,
+    letterSpacing: 2,
+    fontWeight: "bold",
+    marginBottom: 6,
+  },
+  pitBoxRow: {
+    flex: 1,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    alignItems: "center",
+  },
+  pitBoxEmpty: {
+    color: COLORS.textDim,
+    fontFamily: FONT_MONO,
+    fontSize: 12,
+  },
+  pitBoxItem: {
+    width: 62,
+    height: 62,
+    borderRadius: 10,
+    backgroundColor: COLORS.panel2,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pitBoxItemText: {
+    color: COLORS.text,
+    fontFamily: FONT_MONO,
+    fontWeight: "bold",
+    fontSize: 12,
+  },
 });
