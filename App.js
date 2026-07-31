@@ -243,28 +243,10 @@ function EditableItem({
     minH,
     onUpdateLayout,
   });
-  const [dataToggles, setDataToggles] = useState({
-    mfd: true,
-    ers: true,
-    tyres: true,
-    flags: true,
-    delta: true,
-  });
-  const dataTogglesRef = useRef(dataToggles);
-  useEffect(() => {
-    dataTogglesRef.current = dataToggles;
-  }, [dataToggles]);
-
-  // load/save ke AsyncStorage sama kayak layout
-  const TOGGLES_KEY = "@f1_data_toggles";
-  useEffect(() => {
-    AsyncStorage.getItem(TOGGLES_KEY).then((raw) => {
-      if (raw) setDataToggles(JSON.parse(raw));
-    });
-  }, []);
-  useEffect(() => {
-    AsyncStorage.setItem(TOGGLES_KEY, JSON.stringify(dataToggles));
-  }, [dataToggles]);
+  // NOTE: dataToggles state used to live here, inside EditableItem — wrong
+  // scope (App's connect() referenced dataTogglesRef.current, which belonged
+  // to a different component instance entirely and was never the same ref
+  // the settings UI was mutating). Moved up to App() where it belongs.
 
   return (
     <Animated.View
@@ -497,14 +479,20 @@ const FlagIndicator = ({ flag }) => {
 // ---------------------------------------------------------------------------
 // CENTER DASH — MFD Sim Racing Redesign
 // ---------------------------------------------------------------------------
-const MfdDash = ({ telemetry, gearLabel }) => {
+const MfdDash = ({ telemetry, gearLabel, showDelta = true }) => {
   const temps = telemetry.tyreTemp || [0, 0, 0, 0];
 
   const deltaVal = telemetry.delta != null ? parseFloat(telemetry.delta) : 0;
-  const deltaColor =
-    deltaVal < 0 ? COLORS.green : deltaVal > 0 ? COLORS.red : COLORS.text;
-  const deltaStr =
-    deltaVal !== 0
+  const deltaColor = !showDelta
+    ? COLORS.textDim
+    : deltaVal < 0
+      ? COLORS.green
+      : deltaVal > 0
+        ? COLORS.red
+        : COLORS.text;
+  const deltaStr = !showDelta
+    ? "—"
+    : deltaVal !== 0
       ? `${deltaVal > 0 ? "+" : ""}${deltaVal.toFixed(3)}`
       : "0.000";
   const ersPct = Math.min(
@@ -770,6 +758,31 @@ export default function App() {
   const [pressedIds, setPressedIds] = useState({});
   const [gasPercent, setGasPercent] = useState(0);
 
+  // Which incoming data channels the phone actually applies. Lets the person
+  // turn off channels their phone/link can't keep up with (e.g. drop `flags`
+  // or `delta` if the wheel starts feeling laggy).
+  const [dataToggles, setDataToggles] = useState({
+    mfd: true,
+    ers: true,
+    tyres: true,
+    flags: true,
+    delta: true,
+  });
+  const dataTogglesRef = useRef(dataToggles);
+  useEffect(() => {
+    dataTogglesRef.current = dataToggles;
+  }, [dataToggles]);
+
+  const TOGGLES_KEY = "@f1_data_toggles";
+  useEffect(() => {
+    AsyncStorage.getItem(TOGGLES_KEY).then((raw) => {
+      if (raw) setDataToggles(JSON.parse(raw));
+    });
+  }, []);
+  useEffect(() => {
+    AsyncStorage.setItem(TOGGLES_KEY, JSON.stringify(dataToggles));
+  }, [dataToggles]);
+
   const inputRef = useRef({
     A: false,
     B: false,
@@ -789,7 +802,6 @@ export default function App() {
   const showSettingsRef = useRef(showSettings);
   const activeTouches = useRef({});
   const gasPercentRef = useRef(0);
-
   const LAYOUT_KEY = "@f1_mfd_layout";
 
   // --- AUTOMATIC LOAD LAYOUT DARI ASYNC STORAGE ---
@@ -868,20 +880,39 @@ export default function App() {
       }
       setTelemetry((prev) => ({ ...prev, ...filtered }));
     });
+
+    socket.on("cek-ping", (waktuDariServer) => {
+      if (socket.connected) {
+        socket.emit("pantulan-ping", waktuDariServer);
+      }
+    });
+
+    // Single top-level listener for ERS/SOC/brake-bias/fuel/etc. This used to
+    // ALSO get re-registered inside the "flags" handler below every time a
+    // flags event arrived, which leaked a new duplicate listener on every
+    // single flags tick — that's why SOC/ERS/BBAL looked "empty"/erratic on
+    // the MFD: state was being clobbered by a pile-up of stale listeners.
     socket.on("telemetry-status", (data) => {
       if (!dataTogglesRef.current.ers) return;
       setTelemetry((prev) => ({ ...prev, ...data }));
     });
-    socket.on("leaderboard", (rows) => {
-      const me = rows.find((r) => r.isPlayer);
-      if (me) {
-        setTelemetry((prev) => ({
-          ...prev,
-          lastLapMs: me.lastLapMs || prev.lastLapMs,
-          delta: me.intervalS != null ? me.intervalS : prev.delta,
-          lapNum: me.lapNum,
-        }));
-      }
+
+    // "leaderboard" is PC_ONLY on the server (see main.js PC_ONLY set) and
+    // never reaches the phone, so listening for it here was dead code —
+    // delta/lapNum on the MFD would just stay frozen at their initial
+    // values. main.js emits a lightweight "my-status" (just the player's own
+    // row) specifically so the phone doesn't need the full leaderboard.
+    socket.on("my-status", (me) => {
+      if (!me) return;
+      const t = dataTogglesRef.current;
+      setTelemetry((prev) => ({
+        ...prev,
+        lastLapMs: me.lastLapMs || prev.lastLapMs,
+        // intervalS = seconds behind the car ahead (leader has none, so
+        // intervalS is null for them -> show 0.000, i.e. "leader is +0").
+        delta: t.delta ? (me.intervalS != null ? me.intervalS : 0) : prev.delta,
+        lapNum: me.lapNum,
+      }));
     });
 
     socket.on("session-info", (data) => {
@@ -890,7 +921,10 @@ export default function App() {
         sessionTime: data.timeLeft,
       }));
     });
+
     socket.on("flags", (data) => {
+      if (!dataTogglesRef.current.flags) return;
+
       const present = new Set((data.zones || []).map((z) => z.flag));
       if (data.ownCarFlag && data.ownCarFlag !== "NONE")
         present.add(data.ownCarFlag);
@@ -898,11 +932,6 @@ export default function App() {
       const yellowCount = (data.zones || []).filter(
         (z) => z.flag === "YELLOW",
       ).length;
-      socket.on("telemetry-status", (data) => {
-        setTelemetry((prev) => ({ ...prev, ...data }));
-      });
-
-
 
       let activeFlag = "NONE";
       if (present.has("RED") || data.trackStatus === "RED") activeFlag = "RED";
@@ -924,13 +953,14 @@ export default function App() {
     const interval = setInterval(() => {
       if (socketRef.current?.connected)
         socketRef.current.volatile.emit("controllerInput", inputRef.current);
-    }, 33);
+    }, 16);
     return () => {
       clearInterval(interval);
       socketRef.current?.disconnect();
     };
   }, []);
 
+  // Gyro Handling
   // Gyro Handling
   useEffect(() => {
     if (!gyroEnabled) {
@@ -939,7 +969,6 @@ export default function App() {
       inputRef.current.LX = 0;
       return;
     }
-
     DeviceMotion.setUpdateInterval(16);
 
     gyroSubscription.current = DeviceMotion.addListener((motion) => {
@@ -958,9 +987,9 @@ export default function App() {
       const dir = gyroInvertedRef.current ? -1 : 1;
       const MAX_TILT = 1.0;
 
-      inputRef.current.LX = Math.max(-1, Math.min(1, (beta / MAX_TILT) * dir));
+      let setir = (beta / MAX_TILT) * dir;
+      inputRef.current.LX = Math.max(-1, Math.min(1, setir));
     });
-
     return () => {
       gyroSubscription.current?.remove();
       gyroSubscription.current = null;
@@ -1084,11 +1113,20 @@ export default function App() {
           />
         );
       case "mfd":
-        return <MfdDash telemetry={telemetry} gearLabel={gearLabel} />;
+        if (!dataToggles.mfd) return null;
+        return (
+          <MfdDash
+            telemetry={telemetry}
+            gearLabel={gearLabel}
+            showDelta={dataToggles.delta}
+          />
+        );
       case "drs":
         return <DrsIndicator active={telemetry.drs === 1} />;
       case "flag":
-        return <FlagIndicator flag={flagState.active} />;
+        return (
+          <FlagIndicator flag={dataToggles.flags ? flagState.active : "NONE"} />
+        );
       default:
         return null;
     }
@@ -1202,6 +1240,36 @@ export default function App() {
                 {isConnected ? "🟢 Connected to PC Server" : "🔴 Disconnected"}
               </Text>
 
+              {/* Box Pengaturan Gyro */}
+              <View style={styles.gyroBox}>
+                <Text style={[styles.gyroLabel, { marginBottom: 4 }]}>
+                  Sensor Steering (Gyro)
+                </Text>
+                <View style={styles.gyroRow}>
+                  <Text style={styles.gyroLabel}>AKTIFKAN GYRO</Text>
+                  <Switch
+                    value={gyroEnabled}
+                    onValueChange={setGyroEnabled}
+                    trackColor={{ false: COLORS.line, true: COLORS.green }}
+                    thumbColor="#fff"
+                  />
+                </View>
+
+                {/* Munculin Invert cuma kalau Gyro nyala biar UI bersih */}
+                {gyroEnabled && (
+                  <View style={styles.gyroRow}>
+                    <Text style={styles.gyroLabel}>INVERT KIRI/KANAN</Text>
+                    <Switch
+                      value={gyroInverted}
+                      onValueChange={setGyroInverted}
+                      trackColor={{ false: COLORS.line, true: COLORS.cyan }}
+                      thumbColor="#fff"
+                    />
+                  </View>
+                )}
+              </View>
+
+              {/* Box Pengaturan Data (Yang Udah Ada) */}
               <View style={styles.gyroBox}>
                 <Text style={[styles.gyroLabel, { marginBottom: 4 }]}>
                   Data yang Diterima
