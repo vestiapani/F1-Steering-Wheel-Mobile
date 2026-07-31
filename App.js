@@ -243,6 +243,28 @@ function EditableItem({
     minH,
     onUpdateLayout,
   });
+  const [dataToggles, setDataToggles] = useState({
+    mfd: true,
+    ers: true,
+    tyres: true,
+    flags: true,
+    delta: true,
+  });
+  const dataTogglesRef = useRef(dataToggles);
+  useEffect(() => {
+    dataTogglesRef.current = dataToggles;
+  }, [dataToggles]);
+
+  // load/save ke AsyncStorage sama kayak layout
+  const TOGGLES_KEY = "@f1_data_toggles";
+  useEffect(() => {
+    AsyncStorage.getItem(TOGGLES_KEY).then((raw) => {
+      if (raw) setDataToggles(JSON.parse(raw));
+    });
+  }, []);
+  useEffect(() => {
+    AsyncStorage.setItem(TOGGLES_KEY, JSON.stringify(dataToggles));
+  }, [dataToggles]);
 
   return (
     <Animated.View
@@ -481,8 +503,10 @@ const MfdDash = ({ telemetry, gearLabel }) => {
   const deltaVal = telemetry.delta != null ? parseFloat(telemetry.delta) : 0;
   const deltaColor =
     deltaVal < 0 ? COLORS.green : deltaVal > 0 ? COLORS.red : COLORS.text;
-  const deltaStr = deltaVal !== 0 ? `+${deltaVal.toFixed(1)}m` : "0.0";
-
+  const deltaStr =
+    deltaVal !== 0
+      ? `${deltaVal > 0 ? "+" : ""}${deltaVal.toFixed(3)}`
+      : "0.000";
   const ersPct = Math.min(
     100,
     Math.max(0, Math.round(((telemetry.ersEnergy || 0) / 4000000) * 100)),
@@ -837,6 +861,15 @@ export default function App() {
     socket.on("disconnect", () => setIsConnected(false));
 
     socket.on("telemetry", (data) => {
+      const t = dataTogglesRef.current;
+      const filtered = { ...data };
+      if (!t.tyres) {
+        delete filtered.tyreTemp;
+      }
+      setTelemetry((prev) => ({ ...prev, ...filtered }));
+    });
+    socket.on("telemetry-status", (data) => {
+      if (!dataTogglesRef.current.ers) return;
       setTelemetry((prev) => ({ ...prev, ...data }));
     });
     socket.on("leaderboard", (rows) => {
@@ -845,7 +878,7 @@ export default function App() {
         setTelemetry((prev) => ({
           ...prev,
           lastLapMs: me.lastLapMs || prev.lastLapMs,
-          delta: me.intervalM != null ? me.intervalM : prev.delta,
+          delta: me.intervalS != null ? me.intervalS : prev.delta,
           lapNum: me.lapNum,
         }));
       }
@@ -865,6 +898,9 @@ export default function App() {
       const yellowCount = (data.zones || []).filter(
         (z) => z.flag === "YELLOW",
       ).length;
+      socket.on("telemetry-status", (data) => {
+        setTelemetry((prev) => ({ ...prev, ...data }));
+      });
 
 
 
@@ -1167,24 +1203,22 @@ export default function App() {
               </Text>
 
               <View style={styles.gyroBox}>
-                <View style={styles.gyroRow}>
-                  <Text style={styles.gyroLabel}>Aktifkan Gyro (Setir)</Text>
-                  <Switch
-                    value={gyroEnabled}
-                    onValueChange={setGyroEnabled}
-                    trackColor={{ false: COLORS.line, true: COLORS.green }}
-                    thumbColor="#fff"
-                  />
-                </View>
-                <View style={styles.gyroRow}>
-                  <Text style={styles.gyroLabel}>Invert Gyro (Kiri/Kanan)</Text>
-                  <Switch
-                    value={gyroInverted}
-                    onValueChange={setGyroInverted}
-                    trackColor={{ false: COLORS.line, true: COLORS.yellow }}
-                    thumbColor="#fff"
-                  />
-                </View>
+                <Text style={[styles.gyroLabel, { marginBottom: 4 }]}>
+                  Data yang Diterima
+                </Text>
+                {Object.keys(dataToggles).map((key) => (
+                  <View style={styles.gyroRow} key={key}>
+                    <Text style={styles.gyroLabel}>{key.toUpperCase()}</Text>
+                    <Switch
+                      value={dataToggles[key]}
+                      onValueChange={(v) =>
+                        setDataToggles((prev) => ({ ...prev, [key]: v }))
+                      }
+                      trackColor={{ false: COLORS.line, true: COLORS.green }}
+                      thumbColor="#fff"
+                    />
+                  </View>
+                ))}
               </View>
 
               <TouchableOpacity
