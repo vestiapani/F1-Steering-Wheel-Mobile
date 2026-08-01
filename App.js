@@ -580,28 +580,21 @@ export default function App() {
       )}
 
       {/* Panel Pit Box (Library) */}
-      {isEditMode && (
-        <View
-          style={[
-            styles.libraryContainer,
-            !showLibrary && styles.libraryMinimized,
-          ]}
-        >
-          <View style={styles.libraryHeader}>
-            <Text style={styles.libraryTitle}>
-              LIBRARY BUTTON (Drag ke Atas)
-            </Text>
-            <TouchableOpacity onPress={() => setShowLibrary(!showLibrary)}>
-              <Text style={styles.libraryToggleText}>
-                {showLibrary ? "▼ Minimize" : "▲ Buka Library"}
+      {isEditMode &&
+        (showLibrary ? (
+          <View style={styles.libraryContainer}>
+            <View style={styles.libraryHeader}>
+              <Text style={styles.libraryTitle}>
+                LIBRARY BUTTON 
               </Text>
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity onPress={() => setShowLibrary(false)}>
+                <Text style={styles.libraryToggleText}>▼ Tutup</Text>
+              </TouchableOpacity>
+            </View>
 
-          {showLibrary && (
             <ScrollView
               horizontal
-              showsHorizontalScrollIndicator={false}
+              showsHorizontalScrollIndicator={true}
               contentContainerStyle={styles.libraryScroll}
             >
               {availableInPitBox.length === 0 ? (
@@ -617,9 +610,15 @@ export default function App() {
                 ))
               )}
             </ScrollView>
-          )}
-        </View>
-      )}
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.openLibraryPill}
+            onPress={() => setShowLibrary(true)}
+          >
+            <Text style={styles.openLibraryPillText}>➕ BUKA LIBRARY</Text>
+          </TouchableOpacity>
+        ))}
 
       {/* Panel Pengaturan PC & Gyro */}
       {showSettings && (
@@ -874,16 +873,36 @@ const styles = StyleSheet.create({
   },
   libraryContainer: {
     position: "absolute",
-    bottom: 10,
+    bottom: 20,
     left: 20,
     right: 20,
-    height: 110,
+    height: 130,
     backgroundColor: "rgba(15,15,15,0.95)",
     borderRadius: 12,
     borderWidth: 1,
     borderColor: COLORS.cyan,
     padding: 8,
+    paddingBottom: 15,
     zIndex: 150,
+    overflow: "hidden",
+  },
+  openLibraryPill: {
+    position: "absolute",
+    bottom: 30,
+    alignSelf: "center",
+    backgroundColor: "rgba(0,229,255,0.15)",
+    borderWidth: 1,
+    borderColor: COLORS.cyan,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 25,
+    zIndex: 150,
+  },
+  openLibraryPillText: {
+    color: COLORS.cyan,
+    fontFamily: FONT_MONO,
+    fontWeight: "bold",
+    fontSize: 12,
   },
   libraryTitle: {
     color: COLORS.cyan,
@@ -893,7 +912,12 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     marginLeft: 4,
   },
-  libraryScroll: { alignItems: "center", paddingHorizontal: 4, gap: 12 },
+  libraryScroll: { 
+    alignItems: "center", 
+    paddingHorizontal: 5,
+    paddingBottom: 20, 
+    gap: 12,
+  },
   libraryEmpty: {
     color: COLORS.textDim,
     fontFamily: FONT_MONO,
@@ -901,9 +925,6 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     alignSelf: "center",
     marginLeft: 10,
-  },
-  libraryMinimized: {
-    height: 35,
   },
   libraryHeader: {
     flexDirection: "row",
