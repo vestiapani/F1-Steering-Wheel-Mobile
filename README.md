@@ -1,49 +1,40 @@
-# F1 Remote Mobile
+# 🏁 F1 Racing Wheel / Pitwall Dashboard
 
-Aplikasi Android untuk mengubah HP menjadi controller nirkabel (tombol + pedal gas + kemudi via gyro) yang terhubung ke PC lewat WiFi, dipakai bersama server companion (Node.js + Socket.IO + ViGEmClient) yang meneruskan input ke game sebagai virtual gamepad, dan mengirim balik data telemetri (kecepatan, gigi, RPM) serta getaran ke HP.
+Aplikasi *dashboard* dan *button box* modular berbasis Android untuk simulator balap F1. Aplikasi ini dirancang untuk bekerja secara berdampingan dengan aplikasi server PC **[F1 Pitwall](https://github.com/vestiapani/F1-Pitwall)** guna memantau telemetri sekaligus mengontrol fungsi mobil secara nirkabel maupun menggunakan kabel.
 
-## Fitur
-- Tombol face button (A/B/X/Y), bumper (LB/RB), dan trigger R2 (rem/gas tambahan)
-- Slider gas dengan multi-touch independen
-- Kemudi via kemiringan HP (gyroscope), dengan kalibrasi otomatis & mode invert
-- Panel telemetri: gigi, kecepatan, shift light RPM
-- Haptic feedback dari getaran game
-- Layout tombol bisa digeser & di-resize bebas (mode Edit Layout)
-- IP server bisa diisi langsung di aplikasi, tidak perlu hardcode
+---
 
-## Tech stack
-- [Expo](https://expo.dev) (React Native) — tanpa `expo-router`, satu layar (`App.js`)
-- `expo-sensors` untuk gyroscope, `expo-haptics` untuk getaran
-- `socket.io-client` untuk komunikasi realtime ke server PC
+## ✨ Fitur Utama
+- **Modular Button Box:** Atur dan kustomisasi tombol makro sesuai kebutuhan kokpit virtual Anda.
+- **Live Telemetry & Track Map:** Pantau data telemetri, posisi lawan, hingga *leaderboard* secara *real-time*.
+- **Dukungan Stik Virtual (ViGEmBus):** Integrasi mulus dengan PC menggunakan driver kontroler Xbox virtual agar langsung terbaca di dalam game F1.
+- **Koneksi Fleksibel:** Hubungkan perangkat menggunakan jaringan WiFi lokal atau kabel USB via ADB (ADB Reverse) untuk latensi sekecil mungkin.
 
-## Menjalankan untuk development
+---
 
-```bash
-npm install
-npx expo start
-```
+## 🛠️ Prasyarat Sistem
+Agar aplikasi Android ini dapat berfungsi optimal, Anda memerlukan:
+1. **Aplikasi PC F1 Pitwall** yang terinstal di komputer (unduh melalui [F1 Pitwall Releases](https://github.com/vestiapani/F1-Pitwall/releases)).
+2. **ViGEmBus Driver** yang terinstal di PC agar emulasi *controller* berjalan dengan baik.
+3. **Perangkat Android** dengan file APK terinstal.
 
-Scan QR dengan Expo Go, atau tekan `a` untuk emulator Android.
+---
 
-## Build APK (production, tanpa Expo Go)
+## 📦 Cara Instalasi & Penggunaan
 
-Menjalankan lewat Expo Go menambah latency karena bundle JS masih di-serve dari Metro dev server. Build APK sendiri jauh lebih responsif:
+### 1. Sisi PC (Server)
+1. Unduh dan pasang aplikasi PC **F1 Pitwall** dari [halaman rilis resminya](https://github.com/vestiapani/F1-Pitwall/releases).
+2. Pastikan driver **ViGEmBus** sudah terpasang di komputer Anda.
+3. Jalankan aplikasi F1 Pitwall di PC (telemetri game F1 akan otomatis terhubung jika pengaturan UDP dibiarkan *default*).
 
-```bash
-npm install -g eas-cli
-eas login
-eas build -p android --profile preview
-```
+### 2. Sisi Android (Client APK)
+1. Download file APK versi terbaru dari halaman **Releases** repository ini.
+2. Install file APK tersebut ke perangkat Android Anda (pastikan izin *Install from Unknown Sources* aktif).
+3. Hubungkan HP ke PC menggunakan salah satu metode koneksi berikut:
+   - **Metode WiFi:** Pastikan PC dan HP berada di jaringan WiFi yang sama, lalu masukkan IP Server yang tertera di aplikasi PC ke aplikasi HP.
+   - **Metode USB (ADB):** Aktifkan *USB Debugging* di HP, sambungkan via kabel data, klik tombol **USB** di aplikasi PC, lalu isi kolom IP di HP dengan `127.0.0.1`.
 
-Setelah build selesai, download & install APK ke HP. Buka aplikasi, isi IP lokal laptop kamu (mis. `192.168.1.9:3000`) di kolom yang tersedia — pastikan HP & laptop di jaringan WiFi yang sama, lalu tekan **Connect**.
-
-### Kalau APK force close
-Pastikan tidak ada dependency versi `canary`/eksperimental yang tidak dipakai di `package.json`. Untuk debug lebih detail:
-
-```bash
-npx expo run:android      # build & jalankan lokal, log error langsung tampil
-# atau
-adb logcat *:E            # lihat crash log di HP yang tersambung USB
-```
-
-## Struktur proyek
+### 3. Konfigurasi di Dalam Game
+1. Jalankan game simulator F1 di PC Anda.
+2. Masuk ke menu pengaturan kontrol (*Control Settings*).
+3. Lakukan *mapping* tombol pada fungsi yang diinginkan (seperti DRS, ERS, atau DIFF) dengan menekan tombol yang ada di aplikasi Android.
