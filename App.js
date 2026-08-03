@@ -334,6 +334,15 @@ export default function App() {
 
       setFlagState({ active: activeFlag, ts: Date.now() });
     });
+    
+    socket.on("vibrationData", ({ large, small }) => {
+      const intensity = Math.max(large || 0, small || 0);
+      if (intensity > 0.5) {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      } else if (intensity > 0.15) {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+    });
   };
 
   useEffect(() => {
