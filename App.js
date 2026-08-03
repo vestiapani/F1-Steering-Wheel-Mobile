@@ -401,8 +401,8 @@ export default function App() {
   const rpmPercentage = Math.min((telemetry.rpm / telemetry.maxRpm) * 100, 100);
 
   let topLitDots = 0;
-  if (rpmPercentage >= 74) {
-    const fillRatio = Math.min(1, (rpmPercentage - 74) / 21);
+  if (rpmPercentage >= 75) {
+    const fillRatio = Math.min(1, (rpmPercentage - 75) / 15);
     topLitDots = Math.round(fillRatio * 15);
   }
 
@@ -584,9 +584,7 @@ export default function App() {
         (showLibrary ? (
           <View style={styles.libraryContainer}>
             <View style={styles.libraryHeader}>
-              <Text style={styles.libraryTitle}>
-                LIBRARY BUTTON 
-              </Text>
+              <Text style={styles.libraryTitle}>LIBRARY BUTTON</Text>
               <TouchableOpacity onPress={() => setShowLibrary(false)}>
                 <Text style={styles.libraryToggleText}>▼ Tutup</Text>
               </TouchableOpacity>
@@ -912,10 +910,10 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     marginLeft: 4,
   },
-  libraryScroll: { 
-    alignItems: "center", 
+  libraryScroll: {
+    alignItems: "center",
     paddingHorizontal: 5,
-    paddingBottom: 20, 
+    paddingBottom: 20,
     gap: 12,
   },
   libraryEmpty: {
